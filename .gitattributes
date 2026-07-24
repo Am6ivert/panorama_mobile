@@ -1,0 +1,13 @@
+# Единые переводы строк в репозитории: иначе при работе с Windows и macOS/Linux
+# в диффы попадают файлы целиком, хотя код не менялся.
+* text=auto eol=lf
+
+# Бинарники не трогаем.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.ttf binary
+*.otf binary
+*.keystore binary
+*.jks binary
