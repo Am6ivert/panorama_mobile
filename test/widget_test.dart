@@ -25,7 +25,7 @@ void main() {
     child: const PanoramaApp(),
   );
 
-  setUp(() => repository = MockPanoramaRepository(simulateColleagues: false));
+  setUp(() => repository = MockPanoramaRepository(enableBackgroundTimers: false));
   tearDown(() => repository.dispose());
 
   testWidgets('вход по телефону и паролю ведёт на дашборд', (tester) async {

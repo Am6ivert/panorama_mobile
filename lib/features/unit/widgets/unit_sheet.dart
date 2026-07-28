@@ -59,11 +59,6 @@ class UnitSheet extends ConsumerWidget {
                       colors: [Color(0xFF1E3A8A), Color(0xFF3B82F6)],
                     ),
               ),
-              const SizedBox(height: 6),
-              const Text(
-                'Схема и фото — типовые, заменятся реальными от застройщика.',
-                style: TextStyle(fontSize: 11, color: AppColors.ink3),
-              ),
               const SizedBox(height: 14),
               _StatusNote(unit: unit, mine: mine, canSeeClient: canSeeClient),
               _Specs(unit: unit),

@@ -128,8 +128,8 @@ class _RegistryScreenState extends ConsumerState<RegistryScreen> {
   );
 
   void _call(UnitModel unit) {
-    // Телефон клиента доступен по правам через карточку клиента. В демо
-    // ведём в карточку квартиры, где видны участники сделки.
+    // Звоним ответственному клиенту по правам; если карточка недоступна —
+    // открываем квартиру, где видны участники сделки.
     final client = ref
         .read(visibleClientsProvider)
         .where((c) => c.id == unit.clientId)

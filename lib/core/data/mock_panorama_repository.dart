@@ -20,18 +20,14 @@ import 'panorama_repository.dart';
 /// Фонд генерируется детерминированно (сид фиксирован), поэтому при
 /// перезапуске приложения шахматка выглядит одинаково.
 class MockPanoramaRepository implements PanoramaRepository {
-  /// [simulateColleagues] выключается в тестах, чтобы фонд не менялся
-  /// сам по себе посреди проверки.
-  MockPanoramaRepository({bool simulateColleagues = true}) {
+  /// [enableBackgroundTimers] выключается в тестах, чтобы фоновые таймеры
+  /// не мешали `pumpAndSettle`.
+  MockPanoramaRepository({bool enableBackgroundTimers = true}) {
     _units = _generateUnits();
     _seedDeals();
     _seedNotifications();
-    if (simulateColleagues) {
-      _simulation = Timer.periodic(
-        const Duration(seconds: 20),
-        (_) => _simulateOtherManager(),
-      );
-      // Проверка истечения броней (FR-07.7): в моке — чаще, чем в проде.
+    if (enableBackgroundTimers) {
+      // Автоснятие истёкших броней (FR-07.7).
       _expiry = Timer.periodic(
         const Duration(seconds: 30),
         (_) => _sweepExpired(),
@@ -40,12 +36,10 @@ class MockPanoramaRepository implements PanoramaRepository {
   }
 
   late final List<UnitModel> _units;
-  Timer? _simulation;
   Timer? _expiry;
   final _unitsController = StreamController<List<UnitModel>>.broadcast();
   final _notificationsController =
       StreamController<List<AppNotification>>.broadcast();
-  final _random = Random();
 
   var _lastId = 0;
   String _nextId(String prefix) => '$prefix${++_lastId}';
@@ -237,7 +231,7 @@ class MockPanoramaRepository implements PanoramaRepository {
     if (user.blocked) {
       return const LoginFailed('Учётная запись заблокирована');
     }
-    if (password != AppConfig.demoPassword) {
+    if (password != AppConfig.defaultPassword) {
       return const LoginFailed('Неверный пароль');
     }
     _log(user, 'Вход', 'Учётная запись ${user.name}');
@@ -762,7 +756,6 @@ class MockPanoramaRepository implements PanoramaRepository {
 
   @override
   void dispose() {
-    _simulation?.cancel();
     _expiry?.cancel();
     _unitsController.close();
     _notificationsController.close();
@@ -942,54 +935,6 @@ class MockPanoramaRepository implements PanoramaRepository {
       }
     }
     if (changed) _emitUnits();
-  }
-
-  /// Имитация работы коллег: фонд «живёт», видно, что шахматка обновляется.
-  void _simulateOtherManager() {
-    if (_unitsController.isClosed) return;
-    final free = _units
-        .where((u) => u.status == UnitStatus.free)
-        .toList(growable: false);
-    if (free.isEmpty) return;
-
-    final unit = free[_random.nextInt(free.length)];
-    final managers = _managers;
-    final manager = managers[_random.nextInt(managers.length)];
-    final roll = _random.nextInt(3);
-
-    final (status, kind, title, until) = switch (roll) {
-      0 => (
-        UnitStatus.work,
-        UnitEventKind.taken,
-        'Взята в работу',
-        DateTime.now().add(AppConfig.workHoldDuration),
-      ),
-      1 => (
-        UnitStatus.hold,
-        UnitEventKind.booked,
-        'Бронь на 3 дня',
-        DateTime.now().add(AppConfig.bookingDuration),
-      ),
-      _ => (UnitStatus.sold, UnitEventKind.sold, 'Продана', null),
-    };
-
-    final index = _units.indexWhere((u) => u.id == unit.id);
-    _units[index] = unit.copyWith(
-      status: status,
-      heldById: status == UnitStatus.sold ? null : manager.id,
-      heldByName: status == UnitStatus.sold ? null : manager.shortName,
-      heldUntil: until,
-      history: [
-        UnitEvent(
-          kind: kind,
-          title: title,
-          authorName: manager.shortName,
-          at: DateTime.now(),
-        ),
-        ...unit.history,
-      ],
-    );
-    _emitUnits();
   }
 
   void _seedDeals() {

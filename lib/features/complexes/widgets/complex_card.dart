@@ -93,25 +93,6 @@ class _Cover extends StatelessWidget {
     child: Stack(
       children: [
         Positioned(
-          top: 10,
-          right: 10,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: AppColors.brandDark.withValues(alpha: 0.45),
-              borderRadius: BorderRadius.circular(7),
-            ),
-            child: const Text(
-              'фото ЖК',
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
-                color: Colors.white,
-              ),
-            ),
-          ),
-        ),
-        Positioned(
           left: 12,
           bottom: 12,
           child: Container(

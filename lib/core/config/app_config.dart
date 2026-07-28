@@ -20,6 +20,8 @@ abstract final class AppConfig {
   /// За сколько до истечения брони считаем её «истекающей» (FR-09.9, FR-11.2).
   static const bookingExpiryWarning = Duration(hours: 24);
 
-  /// Демо-пароль для входа, пока не подключён backend с SMS-паролями.
-  static const demoPassword = '0000';
+  /// Пароль учётных записей для входа. При подключении backend проверка
+  /// уходит на сервер (хеш Argon2id/bcrypt), это значение перестаёт
+  /// использоваться.
+  static const defaultPassword = '0000';
 }

@@ -121,8 +121,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 ),
                 child: const Text('Забыли пароль?'),
               ),
-              const SizedBox(height: 30),
-              const _DemoHint(),
               const SizedBox(height: 24),
             ],
           ),
@@ -156,49 +154,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   void _recover() {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Код для восстановления отправлен по SMS (демо)'),
+        content: Text('Код для восстановления отправлен по SMS'),
       ),
     );
   }
-}
-
-class _DemoHint extends StatelessWidget {
-  const _DemoHint();
-
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(14),
-    decoration: BoxDecoration(
-      color: Colors.white.withValues(alpha: 0.06),
-      border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-      borderRadius: BorderRadius.circular(14),
-    ),
-    child: const Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'ДЕМО-ДОСТУП',
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 0.6,
-            color: AppColors.onDarkSub,
-          ),
-        ),
-        SizedBox(height: 8),
-        Text(
-          'Администратор: +996 555 00-11-22\n'
-          'Менеджер: +996 555 10-22-30\n'
-          'Пароль для всех: 0000',
-          style: TextStyle(
-            fontSize: 13,
-            height: 1.6,
-            color: Colors.white,
-          ),
-        ),
-      ],
-    ),
-  );
 }
 
 class _Label extends StatelessWidget {
