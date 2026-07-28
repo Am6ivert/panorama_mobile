@@ -34,10 +34,22 @@ abstract final class AppColors {
   static const holdBorder = Color(0xFFF6DFB4);
   static const holdInk = Color(0xFF92400E);
 
+  // Оформление — идёт подписание документов.
+  static const design = Color(0xFF2563EB);
+  static const designBg = Color(0xFFE7EEFE);
+  static const designBorder = Color(0xFFC3D5FB);
+  static const designInk = Color(0xFF1E40AF);
+
   static const sold = Color(0xFFA3AEC0);
   static const soldBg = Color(0xFFEFF1F5);
   static const soldBorder = Color(0xFFE1E5EC);
   static const soldInk = Color(0xFF7A879B);
+
+  // Не для продажи — техпомещение или снята с продажи (штриховка).
+  static const offMarket = Color(0xFF94A3B8);
+  static const offMarketBg = Color(0xFFF1F3F7);
+  static const offMarketBorder = Color(0xFFD8DEE8);
+  static const offMarketInk = Color(0xFF64748B);
 
   /// Цвета аватарок менеджеров и клиентов.
   static const palette = <Color>[

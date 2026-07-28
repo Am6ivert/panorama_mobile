@@ -1,16 +1,33 @@
 import 'package:flutter/material.dart';
 import '../constants/app_colors.dart';
+import 'user_role.dart';
 
+/// Пользователь системы: продавец (менеджер) или администратор.
+///
+/// Держатели квартир (held_by) — это те же пользователи, поэтому единая
+/// модель, а не отдельная сущность.
 class ManagerModel {
   const ManagerModel({
     required this.id,
     required this.name,
     required this.phone,
+    this.role = UserRole.manager,
+    this.blocked = false,
+    this.mustChangePassword = false,
   });
 
   final String id;
   final String name;
   final String phone;
+  final UserRole role;
+
+  /// Учётная запись заблокирована администратором (FR-01.5).
+  final bool blocked;
+
+  /// Требуется смена временного пароля при первом входе (FR-01.3).
+  final bool mustChangePassword;
+
+  bool get isAdmin => role.isAdmin;
 
   /// «Азамат Кубанычбеков» -> «АК»
   String get initials {
@@ -29,11 +46,36 @@ class ManagerModel {
 
   Color get color => AppColors.fromSeed(id);
 
+  ManagerModel copyWith({
+    String? name,
+    String? phone,
+    UserRole? role,
+    bool? blocked,
+    bool? mustChangePassword,
+  }) => ManagerModel(
+    id: id,
+    name: name ?? this.name,
+    phone: phone ?? this.phone,
+    role: role ?? this.role,
+    blocked: blocked ?? this.blocked,
+    mustChangePassword: mustChangePassword ?? this.mustChangePassword,
+  );
+
   factory ManagerModel.fromJson(Map<String, dynamic> json) => ManagerModel(
     id: json['id'] as String,
     name: json['name'] as String? ?? '',
     phone: json['phone'] as String? ?? '',
+    role: UserRole.fromWire(json['role'] as String?),
+    blocked: json['blocked'] as bool? ?? false,
+    mustChangePassword: json['must_change_password'] as bool? ?? false,
   );
 
-  Map<String, dynamic> toJson() => {'id': id, 'name': name, 'phone': phone};
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'name': name,
+    'phone': phone,
+    'role': role.wire,
+    'blocked': blocked,
+    'must_change_password': mustChangePassword,
+  };
 }

@@ -6,13 +6,10 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/models/client_model.dart';
 import '../../../core/providers/data_providers.dart';
-import '../../../core/utils/money.dart';
 import '../../../shared/widgets/choice_chip_bar.dart';
-import '../../../shared/widgets/labeled_slider.dart';
-import '../../search/providers/search_filter_provider.dart';
 
-/// Форма нового клиента. Возвращает заведённую карточку или `null`,
-/// если менеджер закрыл окно.
+/// Форма нового клиента (FR-07.1, FR-08.1). Возвращает заведённую карточку или
+/// `null`, если менеджер закрыл окно. Денежных полей нет (ТЗ 1.3).
 Future<ClientModel?> addClient(BuildContext context) =>
     showModalBottomSheet<ClientModel>(
       context: context,
@@ -30,22 +27,28 @@ class AddClientSheet extends ConsumerStatefulWidget {
 
 class _AddClientSheetState extends ConsumerState<AddClientSheet> {
   static const _roomLabels = ['Студия', '1к', '2к', '3к', '4к'];
-  static const _budgetStep = 2500;
+  static const _sources = [
+    'Реклама Instagram',
+    'Рекомендация',
+    'Сайт',
+    'Реклама 2ГИС',
+    'Звонок',
+  ];
 
   final _formKey = GlobalKey<FormState>();
   final _name = TextEditingController();
   final _phone = TextEditingController(text: '+996 ');
-  final _note = TextEditingController();
+  final _request = TextEditingController();
 
   int _rooms = 2;
-  int _budget = 60000;
+  String _source = _sources.first;
   bool _saving = false;
 
   @override
   void dispose() {
     _name.dispose();
     _phone.dispose();
-    _note.dispose();
+    _request.dispose();
     super.dispose();
   }
 
@@ -56,7 +59,6 @@ class _AddClientSheetState extends ConsumerState<AddClientSheet> {
         maxHeight: MediaQuery.sizeOf(context).height * 0.9,
       ),
       child: SingleChildScrollView(
-        // Форма поднимается над клавиатурой, иначе поле заметки перекрыто.
         padding: EdgeInsets.fromLTRB(
           18,
           6,
@@ -71,11 +73,10 @@ class _AddClientSheetState extends ConsumerState<AddClientSheet> {
               const Text('Новый клиент', style: AppTextStyles.h1),
               const SizedBox(height: 4),
               const Text(
-                'Запрос сохранится, и подбор сразу покажет, что ему подходит',
+                'Запрос сохранится, подбор сразу покажет, что ему подходит',
                 style: AppTextStyles.secondary,
               ),
               const SizedBox(height: 18),
-
               _Field(
                 controller: _name,
                 label: 'Имя и фамилия',
@@ -96,7 +97,6 @@ class _AddClientSheetState extends ConsumerState<AddClientSheet> {
                 ],
                 validator: _validatePhone,
               ),
-
               const SizedBox(height: 18),
               const Text('ЧТО ИЩЕТ', style: AppTextStyles.section),
               const SizedBox(height: 10),
@@ -109,33 +109,25 @@ class _AddClientSheetState extends ConsumerState<AddClientSheet> {
                 isSelected: (value) => value == _rooms,
                 onTap: (value) => setState(() => _rooms = value),
               ),
-
               const SizedBox(height: 18),
-              const Text('БЮДЖЕТ ДО', style: AppTextStyles.section),
+              const Text('ИСТОЧНИК', style: AppTextStyles.section),
               const SizedBox(height: 10),
-              LabeledSlider(
-                margin: EdgeInsets.zero,
-                leading: Money.kgsApprox(_budget),
-                trailing: Money.usd(_budget),
-                value: _budget.toDouble(),
-                min: SearchFilterNotifier.minBudget.toDouble(),
-                max: SearchFilterNotifier.maxBudget.toDouble(),
-                divisions:
-                    (SearchFilterNotifier.maxBudget -
-                        SearchFilterNotifier.minBudget) ~/
-                    _budgetStep,
-                onChanged: (v) => setState(() => _budget = v.round()),
+              ChoiceChipBar<String>(
+                padding: EdgeInsets.zero,
+                options: [
+                  for (final s in _sources) ChipOption(value: s, label: s),
+                ],
+                isSelected: (value) => value == _source,
+                onTap: (value) => setState(() => _source = value),
               ),
-
               const SizedBox(height: 18),
               _Field(
-                controller: _note,
-                label: 'Заметка (необязательно)',
-                hint: 'Важен вид на горы, ипотека Айыл Банк',
+                controller: _request,
+                label: 'Запрос клиента (необязательно)',
+                hint: 'Важен вид на горы, не выше 8 этажа',
                 maxLines: 3,
                 textCapitalization: TextCapitalization.sentences,
               ),
-
               const SizedBox(height: 18),
               FilledButton(
                 onPressed: _saving ? null : _submit,
@@ -166,6 +158,8 @@ class _AddClientSheetState extends ConsumerState<AddClientSheet> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    final seller = ref.read(currentUserProvider);
+    if (seller == null) return;
     setState(() => _saving = true);
 
     try {
@@ -174,11 +168,11 @@ class _AddClientSheetState extends ConsumerState<AddClientSheet> {
           .addClient(
             name: _name.text.trim(),
             phone: _phone.text.trim(),
+            seller: seller,
             rooms: _rooms,
-            budget: _budget,
-            note: _note.text.trim(),
+            source: _source,
+            request: _request.text.trim(),
           );
-      // Список клиентов перечитается — новая карточка появится вверху.
       ref.invalidate(clientsProvider);
       if (mounted) Navigator.of(context).pop(client);
     } catch (e) {

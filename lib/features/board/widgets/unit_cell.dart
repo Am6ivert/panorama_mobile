@@ -4,6 +4,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/models/unit_model.dart';
 
 /// Клетка шахматки. Цвет = статус, инициалы в углу = кто держит квартиру.
+/// «Не для продажи» рисуется штриховкой (FR-06).
 class UnitCell extends StatelessWidget {
   const UnitCell({
     super.key,
@@ -16,13 +17,8 @@ class UnitCell extends StatelessWidget {
 
   final UnitModel unit;
   final double width;
-
-  /// Не подходит под активный фильтр — гасим.
   final bool dimmed;
-
-  /// Подходит под фильтр, когда фильтр включён — обводим.
   final bool highlighted;
-
   final VoidCallback onTap;
 
   @override
@@ -46,58 +42,88 @@ class UnitCell extends StatelessWidget {
             ),
             borderRadius: BorderRadius.circular(11),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '№${unit.number}',
-                    style: TextStyle(
-                      fontSize: 9,
-                      fontWeight: FontWeight.w700,
-                      height: 1,
-                      color: status.foreground.withValues(alpha: 0.6),
+          child: status.isOffMarket
+              ? CustomPaint(
+                  painter: _HatchPainter(status.border),
+                  child: const Center(
+                    child: Icon(
+                      Icons.block,
+                      size: 15,
+                      color: AppColors.offMarketInk,
                     ),
                   ),
-                  if (unit.status.isTaken && unit.heldByName != null)
-                    _HolderMark(name: unit.heldByName!, compact: compact),
-                ],
-              ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    unit.shortLayout,
-                    style: TextStyle(
-                      fontSize: 13.5,
-                      fontWeight: FontWeight.w800,
-                      height: 1,
-                      letterSpacing: -0.3,
-                      color: status.foreground,
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '№${unit.number}',
+                          style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w700,
+                            height: 1,
+                            color: status.foreground.withValues(alpha: 0.6),
+                          ),
+                        ),
+                        if (unit.status.isTaken && unit.heldByName != null)
+                          _HolderMark(name: unit.heldByName!, compact: compact),
+                      ],
                     ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    compact ? '${unit.area}' : '${unit.area} м²',
-                    style: TextStyle(
-                      fontSize: 9.5,
-                      fontWeight: FontWeight.w600,
-                      height: 1,
-                      color: status.foreground.withValues(alpha: 0.75),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          unit.shortLayout,
+                          style: TextStyle(
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w800,
+                            height: 1,
+                            letterSpacing: -0.3,
+                            color: status.foreground,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          compact ? '${unit.area}' : '${unit.area} м²',
+                          style: TextStyle(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w600,
+                            height: 1,
+                            color: status.foreground.withValues(alpha: 0.75),
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                ],
-              ),
-            ],
-          ),
+                  ],
+                ),
         ),
       ),
     );
   }
+}
+
+class _HatchPainter extends CustomPainter {
+  _HatchPainter(this.color);
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 1.2;
+    const step = 7.0;
+    for (var x = -size.height; x < size.width; x += step) {
+      canvas.drawLine(Offset(x, size.height), Offset(x + size.height, 0), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_HatchPainter oldDelegate) => oldDelegate.color != color;
 }
 
 class _HolderMark extends StatelessWidget {

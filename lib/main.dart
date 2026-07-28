@@ -16,7 +16,7 @@ class PanoramaApp extends StatelessWidget {
     title: 'Panorama',
     debugShowCheckedModeBanner: false,
     theme: AppTheme.light,
-    initialRoute: AppRoutes.managerPick,
+    initialRoute: AppRoutes.login,
     onGenerateRoute: AppRouter.onGenerateRoute,
   );
 }

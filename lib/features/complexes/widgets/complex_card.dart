@@ -5,7 +5,6 @@ import '../../../core/constants/app_text_styles.dart';
 import '../../../core/models/complex_model.dart';
 import '../../../core/providers/data_providers.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/utils/money.dart';
 
 class ComplexCard extends StatelessWidget {
   const ComplexCard({
@@ -42,7 +41,7 @@ class ComplexCard extends StatelessWidget {
                 Text(complex.name, style: AppTextStyles.title),
                 const SizedBox(height: 3),
                 Text(
-                  '${complex.address} · от ${Money.usd(complex.pricePerSquare)}/м²',
+                  '${complex.address} · ${stats.sellable} квартир',
                   style: AppTextStyles.secondary,
                 ),
                 const SizedBox(height: 11),
@@ -57,13 +56,13 @@ class ComplexCard extends StatelessWidget {
                     ),
                     _Stat(
                       color: AppColors.work,
-                      value: stats.work,
+                      value: stats.work + stats.hold,
                       label: 'в работе',
                     ),
                     _Stat(
-                      color: AppColors.hold,
-                      value: stats.hold,
-                      label: 'бронь',
+                      color: AppColors.design,
+                      value: stats.design,
+                      label: 'оформление',
                     ),
                     _Stat(
                       color: AppColors.sold,
@@ -93,7 +92,6 @@ class _Cover extends StatelessWidget {
     decoration: BoxDecoration(gradient: complex.cover),
     child: Stack(
       children: [
-        // Заглушка вместо фото ЖК — заменится, когда Panorama даст снимки.
         Positioned(
           top: 10,
           right: 10,

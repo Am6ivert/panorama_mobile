@@ -1,22 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/config/app_config.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/models/complex_model.dart';
 import '../../../core/models/unit_model.dart';
 import '../../../core/models/unit_status.dart';
 import '../../../core/providers/data_providers.dart';
-import '../../../core/providers/ui_providers.dart';
+import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/utils/money.dart';
 import '../../../core/utils/time_format.dart';
 import '../../search/providers/search_filter_provider.dart';
 import 'client_pick_sheet.dart';
 import 'unit_plan.dart';
 
-/// Карточка квартиры. Читает квартиру из живого фонда по id, поэтому
-/// если её статус изменится, пока карточка открыта, это сразу видно.
+/// Карточка квартиры (FR-06). Кнопки зависят от статуса и от того, является ли
+/// пользователь ответственным менеджером или администратором. Денежных
+/// значений нет (ТЗ 1.3).
 class UnitSheet extends ConsumerWidget {
   const UnitSheet({super.key, required this.unitId});
 
@@ -32,8 +33,10 @@ class UnitSheet extends ConsumerWidget {
       );
     }
 
-    final manager = ref.watch(currentManagerProvider);
-    final mine = manager != null && unit.heldBy(manager.id);
+    final user = ref.watch(currentUserProvider);
+    final isAdmin = user?.isAdmin ?? false;
+    final mine = user != null && unit.heldBy(user.id);
+    final canSeeClient = mine || isAdmin;
     final complex = _complex(ref, unit.complexId);
 
     return SafeArea(
@@ -50,23 +53,22 @@ class UnitSheet extends ConsumerWidget {
               const SizedBox(height: 14),
               UnitGallery(
                 rooms: unit.rooms,
-                cover: complex?.cover ?? const LinearGradient(
-                  colors: [Color(0xFF1E3A8A), Color(0xFF3B82F6)],
-                ),
+                cover:
+                    complex?.cover ??
+                    const LinearGradient(
+                      colors: [Color(0xFF1E3A8A), Color(0xFF3B82F6)],
+                    ),
               ),
               const SizedBox(height: 6),
               const Text(
-                'Фото-заглушки: подставим реальные снимки и чертежи, когда '
-                'получим их от застройщика.',
+                'Схема и фото — типовые, заменятся реальными от застройщика.',
                 style: TextStyle(fontSize: 11, color: AppColors.ink3),
               ),
               const SizedBox(height: 14),
-              _StatusNote(unit: unit, mine: mine),
+              _StatusNote(unit: unit, mine: mine, canSeeClient: canSeeClient),
               _Specs(unit: unit),
               const SizedBox(height: 14),
-              _PriceBox(unit: unit),
-              const SizedBox(height: 14),
-              _Actions(unit: unit, mine: mine),
+              _Actions(unit: unit, mine: mine, isAdmin: isAdmin),
               if (unit.history.isNotEmpty) _History(unit: unit),
             ],
           ),
@@ -136,43 +138,59 @@ class _Title extends StatelessWidget {
 }
 
 /// Объясняет менеджеру, что происходит с квартирой и можно ли её продавать.
+/// Данные клиента показываются только ответственному и администратору.
 class _StatusNote extends StatelessWidget {
-  const _StatusNote({required this.unit, required this.mine});
+  const _StatusNote({
+    required this.unit,
+    required this.mine,
+    required this.canSeeClient,
+  });
 
   final UnitModel unit;
   final bool mine;
+  final bool canSeeClient;
 
   @override
   Widget build(BuildContext context) {
+    final until = unit.heldUntil;
+    final clientLine = canSeeClient && unit.clientName != null
+        ? '\nКлиент: ${unit.clientName}'
+        : '';
+
     final (text, background, foreground) = switch (unit.status) {
       UnitStatus.free => (null, null, null),
       UnitStatus.work when mine => (
-        'Квартира закреплена за вами${unit.heldUntil == null ? '' : ' ${TimeFormat.until(unit.heldUntil!)}'}. '
-            'Другие менеджеры видят её занятой и не продадут.'
-            '${unit.clientName == null ? '' : '\nКлиент: ${unit.clientName}'}',
+        'Квартира закреплена за вами${until == null ? '' : ' ${TimeFormat.until(until)}'}. '
+            'Другие менеджеры видят её занятой.$clientLine',
         AppColors.freeBg,
         AppColors.freeInk,
       ),
       UnitStatus.work => (
-        '${unit.heldByName} взял(а) в работу'
-            '${unit.heldUntil == null ? '' : ' ${TimeFormat.until(unit.heldUntil!)}'}'
-            ' — сейчас показывает клиенту. Продавать нельзя.',
+        '${unit.heldByName} показывает клиенту'
+            '${until == null ? '' : ' ${TimeFormat.until(until)}'}. Продавать нельзя.',
         AppColors.workBg,
         AppColors.workInk,
       ),
       UnitStatus.hold => (
-        'Бронь${unit.heldUntil == null ? '' : ' ${TimeFormat.until(unit.heldUntil!)}'}'
-            ' · менеджер ${unit.heldByName ?? '—'}'
-            '${unit.clientName == null ? '' : ' · клиент ${unit.clientName}'}'
-            '\nСнимается автоматически, если не внесён первоначальный взнос.',
+        'Бронь${until == null ? '' : ' ${TimeFormat.until(until)}'} · '
+            'менеджер ${unit.heldByName ?? '—'}$clientLine',
         AppColors.holdBg,
         AppColors.holdInk,
       ),
+      UnitStatus.design => (
+        'Идёт оформление документов · менеджер ${unit.heldByName ?? '—'}$clientLine',
+        AppColors.designBg,
+        AppColors.designInk,
+      ),
       UnitStatus.sold => (
-        'Продана · договор №${1400 + unit.number}'
-            '${unit.heldByName == null ? '' : ' · менеджер ${unit.heldByName}'}',
+        'Продана${unit.heldByName == null ? '' : ' · менеджер ${unit.heldByName}'}',
         AppColors.soldBg,
         AppColors.soldInk,
+      ),
+      UnitStatus.offMarket => (
+        'Не для продажи — техническое помещение или снята с продажи.',
+        AppColors.offMarketBg,
+        AppColors.offMarketInk,
       ),
     };
 
@@ -202,7 +220,7 @@ class _Specs extends StatelessWidget {
   Widget build(BuildContext context) {
     final rows = [
       [('Общая площадь', '${unit.area} м²'), ('Кухня', unit.kitchen)],
-      [('Санузлов', '${unit.bathrooms}'), ('Этаж', '${unit.floor}')],
+      [('Санузлов', '${unit.bathrooms}'), ('Этаж · позиция', '${unit.floor} · ${unit.position}')],
       [('Вид из окон', unit.view), ('Отделка', unit.finish)],
     ];
 
@@ -255,215 +273,333 @@ class _Specs extends StatelessWidget {
   );
 }
 
-class _PriceBox extends StatelessWidget {
-  const _PriceBox({required this.unit});
-
-  final UnitModel unit;
-
-  @override
-  Widget build(BuildContext context) => Container(
-    width: double.infinity,
-    padding: const EdgeInsets.all(14),
-    decoration: BoxDecoration(
-      gradient: const LinearGradient(
-        colors: [Color(0xFFF2F6FF), Color(0xFFEAF0FE)],
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-      ),
-      border: Border.all(color: const Color(0xFFDCE6FB)),
-      borderRadius: BorderRadius.circular(14),
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(unit.priceUsd, style: AppTextStyles.price),
-        const SizedBox(height: 2),
-        Text(
-          unit.priceKgs,
-          style: const TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w700,
-            color: AppColors.ink2,
-          ),
-        ),
-        const SizedBox(height: 5),
-        Text(unit.pricePerSquare, style: AppTextStyles.secondary),
-        const SizedBox(height: 9),
-        const Divider(height: 1, color: Color(0xFFC9D8F7)),
-        const SizedBox(height: 9),
-        Text(
-          'Рассрочка: 30% первый взнос + '
-          '${Money.usd(Money.monthlyInstalment(unit.price))} × 24 мес',
-          style: const TextStyle(
-            fontSize: 12.5,
-            fontWeight: FontWeight.w700,
-            color: AppColors.brand,
-          ),
-        ),
-      ],
-    ),
-  );
-}
-
 class _Actions extends ConsumerWidget {
-  const _Actions({required this.unit, required this.mine});
+  const _Actions({
+    required this.unit,
+    required this.mine,
+    required this.isAdmin,
+  });
 
   final UnitModel unit;
   final bool mine;
+  final bool isAdmin;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final buttons = switch (unit.status) {
-      UnitStatus.free => [
-        _Button(
-          label: 'Взять в работу — еду показывать',
-          color: AppColors.work,
-          onTap: () => _take(context, ref),
-        ),
-        _Row([
-          _Button(label: 'Забронировать', onTap: () => _book(context, ref)),
+    final buttons = <Widget>[];
+
+    switch (unit.status) {
+      case UnitStatus.free:
+        buttons.addAll([
           _Button(
-            label: 'Отправить',
-            secondary: true,
-            onTap: () => _share(context),
+            label: 'Взять в работу — еду показывать',
+            color: AppColors.work,
+            onTap: () => _take(context, ref),
           ),
-        ]),
-        _Button(
-          label: 'Похожие варианты',
-          outlined: true,
-          onTap: () => _similar(context, ref),
-        ),
-      ],
-      UnitStatus.work when mine => [
-        _Button(
-          label: 'Клиент согласен — забронировать',
-          onTap: () => _book(context, ref),
-        ),
-        _Row([
+          _Row([
+            _Button(label: 'Забронировать', onTap: () => _book(context, ref)),
+            _Button(
+              label: 'Отправить',
+              secondary: true,
+              onTap: () => _share(context),
+            ),
+          ]),
           _Button(
-            label: 'Освободить',
-            secondary: true,
-            onTap: () => _release(context, ref),
+            label: 'Похожие варианты',
+            outlined: true,
+            onTap: () => _similar(context, ref),
+          ),
+        ]);
+        if (isAdmin) {
+          buttons.add(
+            _Button(
+              label: 'Снять с продажи',
+              outlined: true,
+              onTap: () => _setStatus(context, ref, UnitStatus.offMarket),
+            ),
+          );
+        }
+      case UnitStatus.work when mine:
+        buttons.addAll([
+          _Button(
+            label: 'Клиент согласен — забронировать',
+            onTap: () => _book(context, ref),
+          ),
+          _Row([
+            _Button(
+              label: 'Освободить',
+              secondary: true,
+              onTap: () => _release(context, ref),
+            ),
+            _Button(
+              label: 'Отправить',
+              secondary: true,
+              onTap: () => _share(context),
+            ),
+          ]),
+        ]);
+      case UnitStatus.hold when mine:
+        buttons.addAll([
+          _Button(
+            label: 'Отправить на оформление',
+            onTap: () => _design(context, ref),
+          ),
+          _Row([
+            _Button(
+              label: 'Продлить бронь',
+              secondary: true,
+              onTap: () => _requestExtend(context, ref),
+            ),
+            _Button(
+              label: 'Снять бронь',
+              secondary: true,
+              onTap: () => _release(context, ref),
+            ),
+          ]),
+        ]);
+      case UnitStatus.hold when isAdmin:
+        buttons.addAll([
+          _Button(
+            label: 'Перевести на оформление',
+            onTap: () => _design(context, ref),
+          ),
+          _Row([
+            _Button(
+              label: 'Продлить бронь',
+              secondary: true,
+              onTap: () => _extend(context, ref),
+            ),
+            _Button(
+              label: 'Снять чужую бронь',
+              secondary: true,
+              onTap: () => _release(context, ref),
+            ),
+          ]),
+        ]);
+      case UnitStatus.design when isAdmin:
+        buttons.addAll([
+          _Button(
+            label: 'Подтвердить продажу',
+            color: AppColors.free,
+            onTap: () => _confirmSale(context, ref),
           ),
           _Button(
-            label: 'Отправить',
+            label: 'Вернуть в свободные',
+            outlined: true,
+            onTap: () => _setStatus(context, ref, UnitStatus.free),
+          ),
+        ]);
+      case UnitStatus.design when mine:
+        // Ответственный менеджер: продажу подтверждает администратор — ждём.
+        buttons.add(
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+            decoration: BoxDecoration(
+              color: AppColors.designBg,
+              borderRadius: BorderRadius.circular(13),
+            ),
+            child: const Text(
+              'Документы на оформлении. Продажу подтвердит администратор — '
+              'вы получите уведомление.',
+              style: TextStyle(fontSize: 13, height: 1.4, color: AppColors.designInk),
+            ),
+          ),
+        );
+      case UnitStatus.work || UnitStatus.hold || UnitStatus.design:
+        // Другой сотрудник: имя видно, клиент не раскрывается.
+        buttons.addAll([
+          _Button(
+            label: 'Написать ${unit.heldByName ?? 'менеджеру'}',
             secondary: true,
-            onTap: () => _share(context),
+            onTap: () => _message(context, ref),
           ),
-        ]),
-      ],
-      UnitStatus.hold when mine => [
-        _Button(
-          label: 'Отправить на оформление',
-          onTap: () => _notify(
-            context,
-            'Заявка в офис',
-            'Оформление договора по кв. №${unit.number} поставлено в очередь',
+          _Button(
+            label: 'Показать похожие свободные',
+            onTap: () => _similar(context, ref),
           ),
-        ),
-        _Button(
-          label: 'Снять бронь',
-          outlined: true,
-          onTap: () => _release(context, ref),
-        ),
-      ],
-      UnitStatus.work || UnitStatus.hold => [
-        _Button(
-          label: 'Написать ${unit.heldByName ?? 'менеджеру'}',
-          secondary: true,
-          onTap: () => _notify(
-            context,
-            'Запрос отправлен',
-            '${unit.heldByName ?? 'Менеджер'} получит уведомление в приложении',
+        ]);
+      case UnitStatus.sold:
+        buttons.add(
+          _Button(
+            label: 'Показать похожие свободные',
+            onTap: () => _similar(context, ref),
           ),
-        ),
-        _Button(
-          label: 'Показать похожие свободные',
-          onTap: () => _similar(context, ref),
-        ),
-      ],
-      UnitStatus.sold => [
-        _Button(
-          label: 'Показать похожие свободные',
-          onTap: () => _similar(context, ref),
-        ),
-      ],
-    };
+        );
+      case UnitStatus.offMarket:
+        if (isAdmin) {
+          buttons.add(
+            _Button(
+              label: 'Вернуть в продажу',
+              onTap: () => _setStatus(context, ref, UnitStatus.free),
+            ),
+          );
+        } else {
+          buttons.add(
+            _Button(
+              label: 'Показать похожие свободные',
+              onTap: () => _similar(context, ref),
+            ),
+          );
+        }
+    }
 
     return Column(children: buttons);
   }
 
   Future<void> _take(BuildContext context, WidgetRef ref) async {
-    final pick = await pickClient(context);
-    if (pick == null || !context.mounted) return;
-    final manager = ref.read(currentManagerProvider);
+    final client = await pickClient(context);
+    if (client == null || !context.mounted) return;
+    final manager = ref.read(currentUserProvider);
     if (manager == null) return;
 
     final messenger = ScaffoldMessenger.of(context);
     final updated = await ref
         .read(panoramaRepositoryProvider)
-        .takeToWork(unitId: unit.id, manager: manager, client: pick.client);
+        .takeToWork(unitId: unit.id, manager: manager, client: client);
+    ref.invalidate(dealsProvider);
     if (context.mounted) Navigator.of(context).pop();
-    _showSnack(
+    _snack(
       messenger,
       'Квартира закреплена за вами',
       'Кв. №${unit.number}'
-          '${updated.heldUntil == null ? '' : ' · ${TimeFormat.until(updated.heldUntil!)}'}'
-          '. Остальные менеджеры видят её занятой.',
+          '${updated.heldUntil == null ? '' : ' · ${TimeFormat.until(updated.heldUntil!)}'}.',
     );
   }
 
   Future<void> _book(BuildContext context, WidgetRef ref) async {
-    final pick = await pickClient(context);
-    if (pick == null || !context.mounted) return;
-    final manager = ref.read(currentManagerProvider);
+    final manager = ref.read(currentUserProvider);
     if (manager == null) return;
+
+    // Лимит активных броней (FR-07.9).
+    final active = (ref.read(unitsProvider).value ?? const [])
+        .where((u) => u.heldBy(manager.id) && u.status == UnitStatus.hold)
+        .length;
+    if (active >= AppConfig.bookingLimitPerManager && !manager.isAdmin) {
+      _snack(
+        ScaffoldMessenger.of(context),
+        'Лимит броней',
+        'У вас уже ${AppConfig.bookingLimitPerManager} активных броней. '
+            'Снимите одну, чтобы забронировать ещё.',
+      );
+      return;
+    }
+
+    final client = await pickClient(context);
+    if (client == null || !context.mounted) return;
 
     final messenger = ScaffoldMessenger.of(context);
     await ref
         .read(panoramaRepositoryProvider)
-        .book(unitId: unit.id, manager: manager, client: pick.client);
+        .book(unitId: unit.id, manager: manager, client: client);
+    ref.invalidate(dealsProvider);
     if (context.mounted) Navigator.of(context).pop();
-    _showSnack(
+    _snack(
       messenger,
       'Бронь оформлена',
-      'Кв. №${unit.number} держится 24 часа. Офис уведомлён.',
+      'Кв. №${unit.number} держится 3 дня. Офис уведомлён.',
     );
   }
 
   Future<void> _release(BuildContext context, WidgetRef ref) async {
-    final manager = ref.read(currentManagerProvider);
+    final manager = ref.read(currentUserProvider);
     if (manager == null) return;
-
     final messenger = ScaffoldMessenger.of(context);
     await ref
         .read(panoramaRepositoryProvider)
         .release(unitId: unit.id, manager: manager);
     if (context.mounted) Navigator.of(context).pop();
-    _showSnack(
+    _snack(messenger, 'Квартира снова свободна', 'Кв. №${unit.number} в фонде');
+  }
+
+  Future<void> _design(BuildContext context, WidgetRef ref) async {
+    final manager = ref.read(currentUserProvider);
+    if (manager == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+    await ref
+        .read(panoramaRepositoryProvider)
+        .sendToDesign(unitId: unit.id, manager: manager);
+    ref.invalidate(dealsProvider);
+    if (context.mounted) Navigator.of(context).pop();
+    _snack(
       messenger,
-      'Квартира снова свободна',
-      'Кв. №${unit.number} вернулась в общий фонд',
+      'Отправлено на оформление',
+      'Кв. №${unit.number} — администратор подтвердит продажу.',
     );
   }
 
-  void _share(BuildContext context) => _notify(
-    context,
+  Future<void> _confirmSale(BuildContext context, WidgetRef ref) async {
+    final admin = ref.read(currentUserProvider);
+    if (admin == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+    await ref
+        .read(panoramaRepositoryProvider)
+        .confirmSale(unitId: unit.id, admin: admin);
+    ref.invalidate(dealsProvider);
+    if (context.mounted) Navigator.of(context).pop();
+    _snack(messenger, 'Продажа подтверждена', 'Кв. №${unit.number} продана.');
+  }
+
+  Future<void> _extend(BuildContext context, WidgetRef ref) async {
+    final admin = ref.read(currentUserProvider);
+    if (admin == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+    await ref
+        .read(panoramaRepositoryProvider)
+        .extendBooking(unitId: unit.id, admin: admin);
+    if (context.mounted) Navigator.of(context).pop();
+    _snack(messenger, 'Бронь продлена', 'Кв. №${unit.number} — +3 дня.');
+  }
+
+  Future<void> _setStatus(
+    BuildContext context,
+    WidgetRef ref,
+    UnitStatus status,
+  ) async {
+    final by = ref.read(currentUserProvider);
+    if (by == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+    await ref
+        .read(panoramaRepositoryProvider)
+        .setStatus(unitId: unit.id, status: status, by: by);
+    if (context.mounted) Navigator.of(context).pop();
+    _snack(messenger, 'Статус изменён', 'Кв. №${unit.number} — ${status.label}.');
+  }
+
+  Future<void> _message(BuildContext context, WidgetRef ref) async {
+    final from = ref.read(currentUserProvider);
+    if (from == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+    await ref
+        .read(panoramaRepositoryProvider)
+        .messageHolder(unitId: unit.id, from: from);
+    _snack(
+      messenger,
+      'Запрос отправлен',
+      '${unit.heldByName ?? 'Менеджер'} получит уведомление в приложении',
+    );
+  }
+
+  void _requestExtend(BuildContext context, WidgetRef ref) => _snack(
+    ScaffoldMessenger.of(context),
+    'Запрос отправлен администратору',
+    'Продление брони кв. №${unit.number} подтверждает администратор.',
+  );
+
+  void _share(BuildContext context) => _snack(
+    ScaffoldMessenger.of(context),
     'Отправлено клиенту',
-    'Карточка кв. №${unit.number} (${unit.area} м², ${unit.priceUsd}) '
-        'ушла в WhatsApp',
+    'Кв. №${unit.number} · ${unit.layoutName} · ${unit.area} м² · '
+        '${unit.floor} этаж — описание ушло в WhatsApp',
   );
 
   void _similar(BuildContext context, WidgetRef ref) {
     ref.read(searchFilterProvider.notifier).seedFrom(unit);
-    ref.read(shellTabProvider.notifier).state = ShellTab.search;
     Navigator.of(context).popUntil((route) => route.isFirst);
+    Navigator.of(context).pushNamed(AppRoutes.similar);
   }
 
-  void _notify(BuildContext context, String title, String message) =>
-      _showSnack(ScaffoldMessenger.of(context), title, message);
-
-  static void _showSnack(
+  static void _snack(
     ScaffoldMessengerState messenger,
     String title,
     String message,

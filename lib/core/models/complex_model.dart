@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// Блок (подъезд) внутри жилого комплекса.
+/// Блок (подъезд) внутри жилого комплекса (FR-02.2).
 class BlockModel {
   const BlockModel({
     required this.name,
@@ -27,7 +27,7 @@ class BlockModel {
   };
 }
 
-/// Жилой комплекс.
+/// Жилой комплекс (FR-02.1). Денежные поля исключены (ТЗ 1.3).
 class ComplexModel {
   const ComplexModel({
     required this.id,
@@ -35,7 +35,6 @@ class ComplexModel {
     required this.address,
     required this.deadline,
     required this.segment,
-    required this.pricePerSquare,
     required this.blocks,
     this.coverStart = 0xFF1E3A8A,
     this.coverEnd = 0xFF3B82F6,
@@ -50,9 +49,6 @@ class ComplexModel {
 
   /// «бизнес», «комфорт», «премиум».
   final String segment;
-
-  /// Базовая цена за м² в долларах.
-  final int pricePerSquare;
 
   final List<BlockModel> blocks;
 
@@ -72,7 +68,6 @@ class ComplexModel {
     address: json['address'] as String? ?? '',
     deadline: json['deadline'] as String? ?? '',
     segment: json['segment'] as String? ?? '',
-    pricePerSquare: (json['price_per_square'] as num?)?.toInt() ?? 0,
     blocks:
         (json['blocks'] as List<dynamic>?)
             ?.map((e) => BlockModel.fromJson(e as Map<String, dynamic>))
@@ -88,7 +83,6 @@ class ComplexModel {
     'address': address,
     'deadline': deadline,
     'segment': segment,
-    'price_per_square': pricePerSquare,
     'blocks': blocks.map((e) => e.toJson()).toList(),
     'cover_start': coverStart,
     'cover_end': coverEnd,

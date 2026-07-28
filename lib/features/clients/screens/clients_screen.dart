@@ -6,7 +6,6 @@ import '../../../core/constants/app_text_styles.dart';
 import '../../../core/models/client_model.dart';
 import '../../../core/providers/data_providers.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/utils/money.dart';
 import '../../../shared/widgets/app_header.dart';
 import '../../../shared/widgets/initials_avatar.dart';
 import '../../../shared/widgets/section_title.dart';
@@ -19,20 +18,22 @@ class ClientsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final clients = ref.watch(clientsProvider);
+    final isAdmin = ref.watch(isAdminProvider);
+    final clientsAsync = ref.watch(clientsProvider);
+    final list = ref.watch(visibleClientsProvider);
 
     return Column(
       children: [
         AppHeader(
           title: 'Клиенты',
-          subtitle: 'Запросы, подбор и история показов',
+          subtitle: isAdmin ? 'Все клиенты компании' : 'Мои клиенты и сделки',
           trailing: _AddButton(onTap: () => _add(context, ref)),
         ),
         Expanded(
-          child: clients.when(
+          child: clientsAsync.when(
             loading: () => const Center(child: CircularProgressIndicator()),
             error: (e, _) => Center(child: Text('Ошибка загрузки: $e')),
-            data: (list) => ListView(
+            data: (_) => ListView(
               padding: const EdgeInsets.only(bottom: 24),
               children: [
                 SectionTitle('Активные клиенты (${list.length})'),
@@ -41,8 +42,7 @@ class ClientsScreen extends ConsumerWidget {
                   child: list.isEmpty
                       ? const EmptyState(
                           icon: Icons.person_add_alt,
-                          text:
-                              'Клиентов пока нет.\n'
+                          text: 'Клиентов пока нет.\n'
                               'Заведите первого — подбор сразу покажет, '
                               'что ему подходит.',
                         )
@@ -79,7 +79,6 @@ class ClientsScreen extends ConsumerWidget {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('${client.name} добавлен в клиенты')),
     );
-    // Сразу открываем карточку: там уже видно, что подходит под его запрос.
     _openCard(context, client.id);
   }
 }
@@ -145,15 +144,42 @@ class _ClientCard extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   '${client.rooms == 0 ? 'Студия' : '${client.rooms}к'} · '
-                  'до ${Money.usd(client.budget)}',
+                  '${client.phone}',
                   style: const TextStyle(fontSize: 12, color: AppColors.ink2),
                 ),
               ],
             ),
           ),
-          Text(
-            client.phone,
-            style: const TextStyle(fontSize: 11, color: AppColors.ink3),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                decoration: BoxDecoration(
+                  color: client.stage.color.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(7),
+                ),
+                child: Text(
+                  client.stage.label,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: client.stage.color,
+                  ),
+                ),
+              ),
+              if (client.actionOverdue) ...[
+                const SizedBox(height: 4),
+                const Text(
+                  'просрочено',
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.error,
+                  ),
+                ),
+              ],
+            ],
           ),
         ],
       ),

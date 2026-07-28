@@ -5,7 +5,8 @@ import '../../core/constants/app_text_styles.dart';
 import '../../core/models/unit_model.dart';
 import '../../core/theme/app_theme.dart';
 
-/// Строка со квартирой — используется в подборе, сделках и карточке клиента.
+/// Строка со квартирой — используется в подборе, реестре, сделках и карточке
+/// клиента. Денежных значений не содержит (ТЗ 1.3).
 class UnitTile extends StatelessWidget {
   const UnitTile({
     super.key,
@@ -61,25 +62,26 @@ class UnitTile extends StatelessWidget {
                   subtitle,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 12.5,
-                    color: AppColors.ink2,
-                  ),
+                  style: const TextStyle(fontSize: 12.5, color: AppColors.ink2),
                 ),
               ],
             ),
           ),
           const SizedBox(width: 8),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(unit.priceUsd, style: AppTextStyles.bodyStrong),
-              const SizedBox(height: 1),
-              Text(
-                unit.priceKgs,
-                style: const TextStyle(fontSize: 10.5, color: AppColors.ink3),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+            decoration: BoxDecoration(
+              color: unit.status.background,
+              borderRadius: BorderRadius.circular(7),
+            ),
+            child: Text(
+              unit.status.label,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: unit.status.foreground,
               ),
-            ],
+            ),
           ),
         ],
       ),
@@ -103,11 +105,7 @@ class EmptyState extends StatelessWidget {
         Text(
           text,
           textAlign: TextAlign.center,
-          style: const TextStyle(
-            fontSize: 14,
-            height: 1.5,
-            color: AppColors.ink3,
-          ),
+          style: const TextStyle(fontSize: 14, height: 1.5, color: AppColors.ink3),
         ),
       ],
     ),
