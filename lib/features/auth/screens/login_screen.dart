@@ -17,14 +17,14 @@ class LoginScreen extends ConsumerStatefulWidget {
 }
 
 class _LoginScreenState extends ConsumerState<LoginScreen> {
-  final _phone = TextEditingController(text: '+996 ');
+  final _login = TextEditingController();
   final _password = TextEditingController();
   bool _loading = false;
   String? _error;
 
   @override
   void dispose() {
-    _phone.dispose();
+    _login.dispose();
     _password.dispose();
     super.dispose();
   }
@@ -55,14 +55,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 style: TextStyle(fontSize: 14, color: AppColors.onDarkSub),
               ),
               const SizedBox(height: 44),
-              const _Label('НОМЕР ТЕЛЕФОНА'),
+              const _Label('ЛОГИН'),
               const SizedBox(height: 8),
               _Input(
-                controller: _phone,
-                hint: '+996 555 00-11-22',
-                keyboardType: TextInputType.phone,
+                controller: _login,
+                hint: 'например, azamat',
+                keyboardType: TextInputType.text,
                 inputFormatters: [
-                  FilteringTextInputFormatter.allow(RegExp(r'[0-9+\-() ]')),
+                  FilteringTextInputFormatter.deny(RegExp(r'\s')),
                 ],
               ),
               const SizedBox(height: 18),
@@ -137,7 +137,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     });
     final result = await ref
         .read(panoramaRepositoryProvider)
-        .login(phone: _phone.text.trim(), password: _password.text);
+        .login(login: _login.text.trim(), password: _password.text);
     if (!mounted) return;
     switch (result) {
       case LoginOk(:final user):

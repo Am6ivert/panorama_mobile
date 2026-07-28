@@ -10,6 +10,7 @@ class ManagerModel {
   const ManagerModel({
     required this.id,
     required this.name,
+    required this.login,
     required this.phone,
     this.role = UserRole.manager,
     this.blocked = false,
@@ -18,6 +19,9 @@ class ManagerModel {
 
   final String id;
   final String name;
+
+  /// Логин для входа (FR-01.1). Телефон остаётся для SMS и связи.
+  final String login;
   final String phone;
   final UserRole role;
 
@@ -48,6 +52,7 @@ class ManagerModel {
 
   ManagerModel copyWith({
     String? name,
+    String? login,
     String? phone,
     UserRole? role,
     bool? blocked,
@@ -55,6 +60,7 @@ class ManagerModel {
   }) => ManagerModel(
     id: id,
     name: name ?? this.name,
+    login: login ?? this.login,
     phone: phone ?? this.phone,
     role: role ?? this.role,
     blocked: blocked ?? this.blocked,
@@ -64,6 +70,7 @@ class ManagerModel {
   factory ManagerModel.fromJson(Map<String, dynamic> json) => ManagerModel(
     id: json['id'] as String,
     name: json['name'] as String? ?? '',
+    login: json['login'] as String? ?? '',
     phone: json['phone'] as String? ?? '',
     role: UserRole.fromWire(json['role'] as String?),
     blocked: json['blocked'] as bool? ?? false,
@@ -73,6 +80,7 @@ class ManagerModel {
   Map<String, dynamic> toJson() => {
     'id': id,
     'name': name,
+    'login': login,
     'phone': phone,
     'role': role.wire,
     'blocked': blocked,

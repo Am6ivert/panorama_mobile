@@ -50,27 +50,32 @@ class MockPanoramaRepository implements PanoramaRepository {
     const ManagerModel(
       id: 'u0',
       name: 'Динара Ибраимова',
+      login: 'admin',
       phone: '+996 555 00-11-22',
       role: UserRole.admin,
     ),
     const ManagerModel(
       id: 'm1',
       name: 'Азамат Кубанычбеков',
+      login: 'azamat',
       phone: '+996 555 10-22-30',
     ),
     const ManagerModel(
       id: 'm2',
       name: 'Эльвира Садыкова',
+      login: 'elvira',
       phone: '+996 700 41-08-19',
     ),
     const ManagerModel(
       id: 'm3',
       name: 'Нурлан Осмонов',
+      login: 'nurlan',
       phone: '+996 559 77-13-04',
     ),
     const ManagerModel(
       id: 'm4',
       name: 'Бекзат Жумалиев',
+      login: 'bekzat',
       phone: '+996 772 60-55-21',
     ),
   ];
@@ -219,12 +224,13 @@ class MockPanoramaRepository implements PanoramaRepository {
 
   @override
   Future<LoginResult> login({
-    required String phone,
+    required String login,
     required String password,
   }) async {
     await _latency();
-    final digits = _digits(phone);
-    final user = _users.where((u) => _digits(u.phone) == digits).firstOrNull;
+    final key = login.trim().toLowerCase();
+    final user =
+        _users.where((u) => u.login.toLowerCase() == key).firstOrNull;
     if (user == null) {
       return const LoginFailed('Учётная запись не найдена');
     }
@@ -247,6 +253,7 @@ class MockPanoramaRepository implements PanoramaRepository {
   @override
   Future<ManagerModel> createUser({
     required String name,
+    required String login,
     required String phone,
     required UserRole role,
   }) async {
@@ -254,6 +261,7 @@ class MockPanoramaRepository implements PanoramaRepository {
     final user = ManagerModel(
       id: _nextId('u'),
       name: name,
+      login: login.trim().toLowerCase(),
       phone: phone,
       role: role,
       mustChangePassword: true,

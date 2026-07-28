@@ -34,10 +34,7 @@ void main() {
 
     expect(find.text('Войти'), findsOneWidget);
 
-    await tester.enterText(
-      find.byType(TextField).first,
-      '+996 555 10-22-30',
-    );
+    await tester.enterText(find.byType(TextField).first, 'azamat');
     await tester.enterText(find.byType(TextField).at(1), '0000');
     await tester.tap(find.text('Войти'));
     await tester.pumpAndSettle();
@@ -50,7 +47,7 @@ void main() {
     await tester.pumpWidget(app());
     await tester.pumpAndSettle();
 
-    await tester.enterText(find.byType(TextField).first, '+996 555 10-22-30');
+    await tester.enterText(find.byType(TextField).first, 'azamat');
     await tester.enterText(find.byType(TextField).at(1), 'wrong');
     await tester.tap(find.text('Войти'));
     await tester.pumpAndSettle();
@@ -59,11 +56,8 @@ void main() {
     expect(find.text('Фонд по статусам'), findsNothing);
   });
 
-  test('вход администратора распознаёт роль', () async {
-    final result = await repository.login(
-      phone: '+996 555 00-11-22',
-      password: '0000',
-    );
+  test('вход администратора по логину распознаёт роль', () async {
+    final result = await repository.login(login: 'admin', password: '0000');
     expect(result, isA<LoginOk>());
     expect((result as LoginOk).user.role, UserRole.admin);
   });
@@ -137,10 +131,12 @@ void main() {
   test('администратор создаёт учётную запись — уходит в аудит', () async {
     final ManagerModel created = await repository.createUser(
       name: 'Марат Осмонов',
+      login: 'marat',
       phone: '+996 555 12-34-56',
       role: UserRole.manager,
     );
     expect(created.mustChangePassword, isTrue);
+    expect(created.login, 'marat');
 
     final users = await repository.fetchUsers();
     expect(users.any((u) => u.id == created.id), isTrue);

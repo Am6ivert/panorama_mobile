@@ -69,12 +69,13 @@ class BulkBlockSpec {
 abstract interface class PanoramaRepository {
   // --- Аутентификация и пользователи (FR-01) ---
 
-  Future<LoginResult> login({required String phone, required String password});
+  Future<LoginResult> login({required String login, required String password});
 
   Future<List<ManagerModel>> fetchUsers();
 
   Future<ManagerModel> createUser({
     required String name,
+    required String login,
     required String phone,
     required UserRole role,
   });

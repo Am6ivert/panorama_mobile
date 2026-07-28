@@ -28,13 +28,13 @@ class ApiPanoramaRepository implements PanoramaRepository {
 
   @override
   Future<LoginResult> login({
-    required String phone,
+    required String login,
     required String password,
   }) async {
     try {
       final res = await _api.post(
         '/auth/login',
-        body: {'phone': phone, 'password': password},
+        body: {'login': login, 'password': password},
       );
       return LoginOk(ManagerModel.fromJson(res['user'] as Map<String, dynamic>));
     } catch (e) {
@@ -49,12 +49,13 @@ class ApiPanoramaRepository implements PanoramaRepository {
   @override
   Future<ManagerModel> createUser({
     required String name,
+    required String login,
     required String phone,
     required UserRole role,
   }) async => ManagerModel.fromJson(
     await _api.post(
       '/users',
-      body: {'name': name, 'phone': phone, 'role': role.wire},
+      body: {'name': name, 'login': login, 'phone': phone, 'role': role.wire},
     ),
   );
 

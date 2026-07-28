@@ -46,6 +46,16 @@ class _TableEditorScreenState extends ConsumerState<TableEditorScreen> {
         .fold(0, (a, b) => a > b ? a : b);
 
     return Scaffold(
+      // Панель действий — в слоте bottomNavigationBar, а не как условный
+      // ребёнок Column с Expanded: так на web не возникает кадр, где кнопки
+      // ещё без размера (иначе mouse_tracker сыплет «hit test ... no size»).
+      bottomNavigationBar: _selected.isEmpty
+          ? null
+          : _ApplyBar(
+              count: _selected.length,
+              onRooms: () => _applyRooms(context),
+              onStatus: () => _applyStatus(context),
+            ),
       body: Column(
         children: [
           AppHeader(
@@ -81,12 +91,6 @@ class _TableEditorScreenState extends ConsumerState<TableEditorScreen> {
                     ),
                   ),
           ),
-          if (_selected.isNotEmpty)
-            _ApplyBar(
-              count: _selected.length,
-              onRooms: () => _applyRooms(context),
-              onStatus: () => _applyStatus(context),
-            ),
         ],
       ),
     );

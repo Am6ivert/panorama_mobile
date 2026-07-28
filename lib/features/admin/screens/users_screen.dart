@@ -250,6 +250,7 @@ class _CreateUserSheet extends ConsumerStatefulWidget {
 class _CreateUserSheetState extends ConsumerState<_CreateUserSheet> {
   final _formKey = GlobalKey<FormState>();
   final _name = TextEditingController();
+  final _login = TextEditingController();
   final _phone = TextEditingController(text: '+996 ');
   UserRole _role = UserRole.manager;
   bool _saving = false;
@@ -257,6 +258,7 @@ class _CreateUserSheetState extends ConsumerState<_CreateUserSheet> {
   @override
   void dispose() {
     _name.dispose();
+    _login.dispose();
     _phone.dispose();
     super.dispose();
   }
@@ -288,6 +290,16 @@ class _CreateUserSheetState extends ConsumerState<_CreateUserSheet> {
               decoration: _dec('ФИО'),
               validator: (v) =>
                   (v == null || v.trim().isEmpty) ? 'Укажите ФИО' : null,
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _login,
+              inputFormatters: [
+                FilteringTextInputFormatter.deny(RegExp(r'\s')),
+              ],
+              decoration: _dec('Логин'),
+              validator: (v) =>
+                  (v == null || v.trim().length < 3) ? 'Логин от 3 символов' : null,
             ),
             const SizedBox(height: 12),
             TextFormField(
@@ -389,6 +401,7 @@ class _CreateUserSheetState extends ConsumerState<_CreateUserSheet> {
         .read(panoramaRepositoryProvider)
         .createUser(
           name: _name.text.trim(),
+          login: _login.text.trim(),
           phone: _phone.text.trim(),
           role: _role,
         );
