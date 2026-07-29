@@ -90,6 +90,12 @@ abstract interface class PanoramaRepository {
     required UserRole role,
   });
 
+  /// Смена пароля (в т.ч. обязательная при первом входе, FR-01.3).
+  Future<ManagerModel> changePassword({
+    required String userId,
+    required String newPassword,
+  });
+
   // --- Недвижимость (FR-02) ---
 
   Future<List<ComplexModel>> fetchComplexes();

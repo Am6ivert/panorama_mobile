@@ -146,6 +146,9 @@ class MockPanoramaRepository implements PanoramaRepository {
   final List<AppNotification> _notifications = [];
   final List<AuditLog> _audit = [];
 
+  /// Индивидуальные пароли после смены; иначе — [AppConfig.defaultPassword].
+  final Map<String, String> _passwords = {};
+
   // --- Справочник объектов ----------------------------------------------------
 
   static const _complexes = [
@@ -237,7 +240,8 @@ class MockPanoramaRepository implements PanoramaRepository {
     if (user.blocked) {
       return const LoginFailed('Учётная запись заблокирована');
     }
-    if (password != AppConfig.defaultPassword) {
+    final expected = _passwords[user.id] ?? AppConfig.defaultPassword;
+    if (password != expected) {
       return const LoginFailed('Неверный пароль');
     }
     _log(user, 'Вход', 'Учётная запись ${user.name}');
@@ -307,6 +311,20 @@ class MockPanoramaRepository implements PanoramaRepository {
     return updated;
   }
 
+  @override
+  Future<ManagerModel> changePassword({
+    required String userId,
+    required String newPassword,
+  }) async {
+    await _latency();
+    _passwords[userId] = newPassword;
+    final i = _users.indexWhere((u) => u.id == userId);
+    final updated = _users[i].copyWith(mustChangePassword: false);
+    _users[i] = updated;
+    _log(updated, 'Смена пароля', updated.name);
+    return updated;
+  }
+
   // ===========================================================================
   // Недвижимость
   // ===========================================================================
@@ -333,10 +351,12 @@ class MockPanoramaRepository implements PanoramaRepository {
 
     for (var floor = 1; floor <= maxFloor; floor++) {
       if (spec.technicalFloors.contains(floor)) continue;
-      final group = spec.groups.firstWhere(
-        (g) => floor >= g.floorFrom && floor <= g.floorTo,
-        orElse: () => spec.groups.last,
-      );
+      // Этаж без группы пропускаем — чтобы фактический результат совпал с
+      // предпросмотром (иначе на «дырках» создавались бы лишние квартиры).
+      final group = spec.groups
+          .where((g) => floor >= g.floorFrom && floor <= g.floorTo)
+          .firstOrNull;
+      if (group == null) continue;
       for (var pos = 0; pos < group.roomsPerPosition.length; pos++) {
         while (spec.skipNumbers.contains(number)) {
           number++;

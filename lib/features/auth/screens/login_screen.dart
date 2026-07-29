@@ -3,11 +3,13 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/constants/app_colors.dart';
+import '../../../core/constants/app_text_styles.dart';
 import '../../../core/data/panorama_repository.dart';
+import '../../../core/models/manager_model.dart';
 import '../../../core/providers/data_providers.dart';
 import '../../../core/router/app_router.dart';
 
-/// Вход по номеру телефона и паролю (FR-01.1). Экрана регистрации нет —
+/// Вход по логину и паролю (FR-01.1). Экрана регистрации нет —
 /// учётные записи создаёт администратор.
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -141,7 +143,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     if (!mounted) return;
     switch (result) {
       case LoginOk(:final user):
-        ref.read(currentUserProvider.notifier).state = user;
+        // Гасим индикатор входа до показа модалки смены пароля, иначе
+        // крутящийся спиннер остаётся под ней.
+        setState(() => _loading = false);
+        // Обязательная смена временного пароля при первом входе (FR-01.3).
+        final effective = user.mustChangePassword
+            ? await _forceChangePassword(user)
+            : user;
+        if (effective == null || !mounted) return;
+        ref.read(currentUserProvider.notifier).state = effective;
         Navigator.of(context).pushReplacementNamed(AppRoutes.home);
       case LoginFailed(:final message):
         setState(() {
@@ -150,6 +160,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         });
     }
   }
+
+  /// Показывает обязательную форму смены пароля. Возвращает обновлённого
+  /// пользователя или null, если отменили.
+  Future<ManagerModel?> _forceChangePassword(ManagerModel user) =>
+      showModalBottomSheet<ManagerModel>(
+        context: context,
+        isScrollControlled: true,
+        isDismissible: false,
+        enableDrag: false,
+        showDragHandle: true,
+        builder: (_) => _ChangePasswordSheet(user: user),
+      );
 
   void _recover() {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -217,4 +239,122 @@ class _Input extends StatelessWidget {
       ),
     ),
   );
+}
+
+/// Обязательная смена временного пароля при первом входе (FR-01.3).
+class _ChangePasswordSheet extends ConsumerStatefulWidget {
+  const _ChangePasswordSheet({required this.user});
+
+  final ManagerModel user;
+
+  @override
+  ConsumerState<_ChangePasswordSheet> createState() =>
+      _ChangePasswordSheetState();
+}
+
+class _ChangePasswordSheetState extends ConsumerState<_ChangePasswordSheet> {
+  final _password = TextEditingController();
+  final _confirm = TextEditingController();
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _password.dispose();
+    _confirm.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => SafeArea(
+    child: Padding(
+      padding: EdgeInsets.fromLTRB(
+        18,
+        6,
+        18,
+        18 + MediaQuery.viewInsetsOf(context).bottom,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Смена пароля', style: AppTextStyles.h1),
+          const SizedBox(height: 4),
+          const Text(
+            'Это первый вход. Задайте новый пароль вместо временного.',
+            style: AppTextStyles.secondary,
+          ),
+          const SizedBox(height: 18),
+          _field(_password, 'Новый пароль'),
+          const SizedBox(height: 12),
+          _field(_confirm, 'Повторите пароль'),
+          if (_error != null) ...[
+            const SizedBox(height: 10),
+            Text(
+              _error!,
+              style: const TextStyle(fontSize: 13, color: AppColors.error),
+            ),
+          ],
+          const SizedBox(height: 18),
+          FilledButton(
+            onPressed: _saving ? null : _submit,
+            child: _saving
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Text('Сохранить и войти'),
+          ),
+        ],
+      ),
+    ),
+  );
+
+  Widget _field(TextEditingController c, String label) => TextField(
+    controller: c,
+    obscureText: true,
+    style: AppTextStyles.body,
+    decoration: InputDecoration(
+      labelText: label,
+      labelStyle: AppTextStyles.secondary,
+      filled: true,
+      fillColor: AppColors.bg,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(13),
+        borderSide: const BorderSide(color: AppColors.line),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(13),
+        borderSide: const BorderSide(color: AppColors.line),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(13),
+        borderSide: const BorderSide(color: AppColors.brand),
+      ),
+    ),
+  );
+
+  Future<void> _submit() async {
+    if (_password.text.length < 4) {
+      setState(() => _error = 'Пароль не короче 4 символов');
+      return;
+    }
+    if (_password.text != _confirm.text) {
+      setState(() => _error = 'Пароли не совпадают');
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    final updated = await ref
+        .read(panoramaRepositoryProvider)
+        .changePassword(userId: widget.user.id, newPassword: _password.text);
+    if (mounted) Navigator.of(context).pop(updated);
+  }
 }

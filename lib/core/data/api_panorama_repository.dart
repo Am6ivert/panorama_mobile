@@ -76,6 +76,17 @@ class ApiPanoramaRepository implements PanoramaRepository {
   );
 
   @override
+  Future<ManagerModel> changePassword({
+    required String userId,
+    required String newPassword,
+  }) async => ManagerModel.fromJson(
+    await _api.post(
+      '/users/$userId/password',
+      body: {'new_password': newPassword},
+    ),
+  );
+
+  @override
   Future<List<ComplexModel>> fetchComplexes() async =>
       (await _api.getList('/complexes')).map(ComplexModel.fromJson).toList();
 
