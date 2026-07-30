@@ -84,10 +84,13 @@ void main() {
     expect(await _dealsOf(repository, manager.id), before + 1);
   });
 
-  test('бронь ставится на 3 дня и уведомляет администратора', () async {
-    final manager = (await repository.fetchUsers())
-        .firstWhere((u) => u.role == UserRole.manager);
-    final admin = (await repository.fetchUsers()).firstWhere((u) => u.isAdmin);
+  test('бронь ставится на 3 дня и уведомляет всю команду, кроме автора', () async {
+    final users = await repository.fetchUsers();
+    final manager = users.firstWhere((u) => u.role == UserRole.manager);
+    final admin = users.firstWhere((u) => u.isAdmin);
+    final otherManager = users.firstWhere(
+      (u) => u.role == UserRole.manager && u.id != manager.id,
+    );
     final client = (await repository.fetchClients())
         .firstWhere((c) => c.sellerId == manager.id);
     final free = (await repository.fetchUnits())
@@ -104,8 +107,20 @@ void main() {
     expect(days, greaterThan(60)); // ~72 часа
     expect(days, lessThanOrEqualTo(72));
 
-    final adminNotes = await repository.fetchNotifications(admin.id);
-    expect(adminNotes.any((n) => n.title.contains('бронь')), isTrue);
+    // Уведомление о брони приходит и администратору, и другому менеджеру,
+    // но не автору брони (FR-11.1, FR-11.10 — без данных клиента).
+    bool booking(n) => n.unitId == free.id && n.title.contains('забронирована');
+    expect((await repository.fetchNotifications(admin.id)).any(booking), isTrue);
+    expect(
+      (await repository.fetchNotifications(otherManager.id)).any(booking),
+      isTrue,
+    );
+    final own = await repository.fetchNotifications(manager.id);
+    expect(own.any(booking), isFalse);
+    // Данные клиента в теле уведомления не раскрываются.
+    final note = (await repository.fetchNotifications(otherManager.id))
+        .firstWhere(booking);
+    expect(note.body.contains(client.name), isFalse);
   });
 
   test('оформление и подтверждение продажи проходит статусы', () async {

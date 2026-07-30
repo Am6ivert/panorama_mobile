@@ -135,6 +135,30 @@ void main() {
     // Само создание блока покрыто тестом уровня репозитория в widget_test.dart.
   });
 
+  testWidgets('бронь одного менеджера доходит уведомлением другому', (
+    tester,
+  ) async {
+    late UnitModel free;
+    await tester.runAsync(() async {
+      final users = await repository.fetchUsers();
+      final azamat = users.firstWhere((u) => u.login == 'azamat');
+      final client = (await repository.fetchClients())
+          .firstWhere((c) => c.sellerId == azamat.id);
+      free = (await repository.fetchUnits())
+          .firstWhere((u) => u.status == UnitStatus.free);
+      await repository.book(unitId: free.id, manager: azamat, client: client);
+    });
+
+    // Входит ДРУГОЙ менеджер и видит уведомление о брони.
+    await login(tester, 'elvira');
+    await tester.tap(find.text('Уведомления').first);
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Квартира забронирована'), findsWidgets);
+    expect(find.textContaining('№${free.number}'), findsWidgets);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('первый вход требует смены временного пароля (FR-01.3)', (
     tester,
   ) async {

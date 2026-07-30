@@ -505,16 +505,27 @@ class MockPanoramaRepository implements PanoramaRepository {
     required String unitId,
     required ManagerModel manager,
     required ClientModel client,
-  }) => _apply(
-    unitId,
-    status: UnitStatus.work,
-    manager: manager,
-    client: client,
-    until: DateTime.now().add(AppConfig.workHoldDuration),
-    event: UnitEventKind.taken,
-    title: 'Взята в работу — ${client.name}',
-    action: 'Взятие в работу',
-  );
+  }) async {
+    final unit = await _apply(
+      unitId,
+      status: UnitStatus.work,
+      manager: manager,
+      client: client,
+      until: DateTime.now().add(AppConfig.workHoldDuration),
+      event: UnitEventKind.taken,
+      title: 'Взята в работу — ${client.name}',
+      action: 'Взятие в работу',
+    );
+    // Остальные менеджеры видят, что квартиру уже показывают.
+    _notifyTeam(
+      manager.id,
+      kind: NotificationKind.message,
+      title: 'Квартиру показывают',
+      body: '${_unitLabel(unit)} — ${manager.shortName} на показе',
+      unitId: unit.id,
+    );
+    return unit;
+  }
 
   @override
   Future<UnitModel> book({
@@ -533,12 +544,13 @@ class MockPanoramaRepository implements PanoramaRepository {
       action: 'Бронирование',
     );
     _ensureDeal(unit, manager, client, DealStage.booking);
-    // FR-11.1: бронь → администратор и ответственный менеджер.
-    _pushNotification(
-      recipientId: _admin.id,
+    // FR-11.1: квартира забронирована → администратор и остальные менеджеры
+    // отдела (чтобы никто не продавал занятую квартиру).
+    _notifyTeam(
+      manager.id,
       kind: NotificationKind.booked,
-      title: 'Новая бронь',
-      body: '${_unitLabel(unit)} — ${manager.shortName}',
+      title: 'Квартира забронирована',
+      body: '${_unitLabel(unit)} — забронировал(а) ${manager.shortName}',
       unitId: unit.id,
     );
     return unit;
@@ -552,7 +564,6 @@ class MockPanoramaRepository implements PanoramaRepository {
     await _latency();
     final i = _units.indexWhere((u) => u.id == unitId);
     final unit = _units[i];
-    final holderId = unit.heldById;
     final updated = unit.copyWith(
       status: UnitStatus.free,
       clearHold: true,
@@ -568,16 +579,14 @@ class MockPanoramaRepository implements PanoramaRepository {
     );
     _units[i] = updated;
     _log(manager, 'Освобождение квартиры', _unitLabel(updated));
-    // FR-11.4: квартира освободилась → менеджеры с незакрытыми сделками.
-    if (holderId != null && holderId != manager.id) {
-      _pushNotification(
-        recipientId: holderId,
-        kind: NotificationKind.released,
-        title: 'Бронь снята',
-        body: '${_unitLabel(updated)} снова свободна',
-        unitId: updated.id,
-      );
-    }
+    // FR-11.4: квартира освободилась → остальные менеджеры отдела (можно брать).
+    _notifyTeam(
+      manager.id,
+      kind: NotificationKind.released,
+      title: 'Квартира освободилась',
+      body: '${_unitLabel(updated)} снова свободна',
+      unitId: updated.id,
+    );
     _emitUnits();
     return updated;
   }
@@ -878,7 +887,7 @@ class MockPanoramaRepository implements PanoramaRepository {
     }
   }
 
-  void _pushNotification({
+  void _addNotification({
     required String recipientId,
     required NotificationKind kind,
     required String title,
@@ -897,6 +906,45 @@ class MockPanoramaRepository implements PanoramaRepository {
         unitId: unitId,
       ),
     );
+  }
+
+  void _pushNotification({
+    required String recipientId,
+    required NotificationKind kind,
+    required String title,
+    required String body,
+    String? unitId,
+  }) {
+    _addNotification(
+      recipientId: recipientId,
+      kind: kind,
+      title: title,
+      body: body,
+      unitId: unitId,
+    );
+    _emitNotifications();
+  }
+
+  /// Уведомляет всех участников процесса по фонду (FR-11): администратора и
+  /// всех активных менеджеров, кроме автора действия. Данные клиента в тело
+  /// не попадают (FR-11.10).
+  void _notifyTeam(
+    String actorId, {
+    required NotificationKind kind,
+    required String title,
+    required String body,
+    String? unitId,
+  }) {
+    for (final u in _users) {
+      if (u.id == actorId || u.blocked) continue;
+      _addNotification(
+        recipientId: u.id,
+        kind: kind,
+        title: title,
+        body: body,
+        unitId: unitId,
+      );
+    }
     _emitNotifications();
   }
 
@@ -950,15 +998,24 @@ class MockPanoramaRepository implements PanoramaRepository {
             ...u.history,
           ],
         );
+        // FR-11.3: ответственному менеджеру — что его бронь истекла.
         if (holderId != null) {
           _pushNotification(
             recipientId: holderId,
-            kind: NotificationKind.released,
-            title: 'Бронь истекла',
+            kind: NotificationKind.expiring,
+            title: 'Ваша бронь истекла',
             body: '${_unitLabel(u)} — бронь снята автоматически',
             unitId: u.id,
           );
         }
+        // FR-11.4: остальным — что квартира снова свободна.
+        _notifyTeam(
+          holderId ?? '',
+          kind: NotificationKind.released,
+          title: 'Квартира освободилась',
+          body: '${_unitLabel(u)} снова свободна',
+          unitId: u.id,
+        );
         changed = true;
       }
     }
