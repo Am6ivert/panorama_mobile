@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:panorama_sales/core/config/app_config.dart';
 import 'package:panorama_sales/core/data/mock_panorama_repository.dart';
 import 'package:panorama_sales/core/data/panorama_repository.dart';
 import 'package:panorama_sales/core/models/client_model.dart';
@@ -182,6 +183,44 @@ void main() {
 
     expect(created, 40);
     expect((await repository.fetchUnits()).length, before + 40);
+  });
+
+  test('лимит броней: менеджер не бронирует сверх лимита, админ — без лимита', () async {
+    final users = await repository.fetchUsers();
+    final manager = users.firstWhere((u) => u.role == UserRole.manager);
+    final admin = users.firstWhere((u) => u.isAdmin);
+    final client = (await repository.fetchClients())
+        .firstWhere((c) => c.sellerId == manager.id);
+
+    // Снимаем возможные брони из сида — начинаем с нуля.
+    for (final u in (await repository.fetchUnits())
+        .where((u) => u.heldById == manager.id && u.status == UnitStatus.hold)) {
+      await repository.release(unitId: u.id, manager: manager);
+    }
+    final free = (await repository.fetchUnits())
+        .where((u) => u.status == UnitStatus.free)
+        .toList();
+
+    // Занимаем лимит броней.
+    for (var i = 0; i < AppConfig.bookingLimitPerManager; i++) {
+      await repository.book(unitId: free[i].id, manager: manager, client: client);
+    }
+    // Следующая бронь менеджера отклоняется лимитом.
+    await expectLater(
+      repository.book(
+        unitId: free[AppConfig.bookingLimitPerManager].id,
+        manager: manager,
+        client: client,
+      ),
+      throwsA(isA<LimitExceeded>()),
+    );
+    // Администратор лимитом не ограничен.
+    final adminBooked = await repository.book(
+      unitId: free[AppConfig.bookingLimitPerManager].id,
+      manager: admin,
+      client: client,
+    );
+    expect(adminBooked.status, UnitStatus.hold);
   });
 
   test('клиент заводится за менеджером и не денежный', () async {

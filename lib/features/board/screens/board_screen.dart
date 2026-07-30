@@ -2,13 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/constants/app_colors.dart';
+import '../../../core/constants/app_text_styles.dart';
 import '../../../core/models/manager_model.dart';
 import '../../../core/models/unit_model.dart';
 import '../../../core/models/unit_status.dart';
 import '../../../core/providers/data_providers.dart';
 import '../../../core/utils/time_format.dart';
 import '../../../shared/widgets/app_header.dart';
-import '../../../shared/widgets/choice_chip_bar.dart';
 import '../../../shared/widgets/section_title.dart';
 import '../../../shared/widgets/unit_tile.dart';
 import '../../unit/widgets/unit_sheet.dart';
@@ -101,16 +101,16 @@ class _BoardScreenState extends ConsumerState<BoardScreen> {
                 managerId: _managerId,
                 stats: stats,
                 onBlock: (value) => setState(() => _block = value),
-                onRoom: (value) => setState(
-                  () => _rooms.contains(value)
-                      ? _rooms.remove(value)
-                      : _rooms.add(value),
-                ),
-                onStatus: (value) => setState(
-                  () => _statuses.contains(value)
-                      ? _statuses.remove(value)
-                      : _statuses.add(value),
-                ),
+                onRooms: (set) => setState(() {
+                  _rooms
+                    ..clear()
+                    ..addAll(set);
+                }),
+                onStatuses: (set) => setState(() {
+                  _statuses
+                    ..clear()
+                    ..addAll(set);
+                }),
                 onManager: (value) => setState(() => _managerId = value),
               ),
               Expanded(
@@ -321,8 +321,8 @@ class _FilterPanel extends StatelessWidget {
     required this.managerId,
     required this.stats,
     required this.onBlock,
-    required this.onRoom,
-    required this.onStatus,
+    required this.onRooms,
+    required this.onStatuses,
     required this.onManager,
   });
 
@@ -334,15 +334,23 @@ class _FilterPanel extends StatelessWidget {
   final String? managerId;
   final UnitStats stats;
   final ValueChanged<String> onBlock;
-  final ValueChanged<int> onRoom;
-  final ValueChanged<UnitStatus> onStatus;
+  final ValueChanged<Set<int>> onRooms;
+  final ValueChanged<Set<UnitStatus>> onStatuses;
   final ValueChanged<String?> onManager;
 
   static const _roomLabels = ['Студия', '1к', '2к', '3к', '4к'];
+  static const _statusOptions = [
+    (UnitStatus.free, 'Свободна'),
+    (UnitStatus.work, 'В работе'),
+    (UnitStatus.hold, 'Бронь'),
+    (UnitStatus.design, 'Оформление'),
+    (UnitStatus.sold, 'Продана'),
+    (UnitStatus.offMarket, 'Не для продажи'),
+  ];
 
   @override
   Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.only(top: 10, bottom: 10),
+    padding: const EdgeInsets.symmetric(vertical: 10),
     decoration: const BoxDecoration(
       color: AppColors.surface,
       border: Border(bottom: BorderSide(color: AppColors.line)),
@@ -350,40 +358,78 @@ class _FilterPanel extends StatelessWidget {
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        ChoiceChipBar<String>(
-          options: [
-            for (final name in blockNames)
-              ChipOption(value: name, label: 'Блок $name'),
-          ],
-          isSelected: (value) => value == block,
-          onTap: onBlock,
-        ),
-        const SizedBox(height: 8),
-        ChoiceChipBar<int>(
-          options: [
-            for (var i = 0; i < _roomLabels.length; i++)
-              ChipOption(value: i, label: _roomLabels[i]),
-          ],
-          isSelected: rooms.contains,
-          onTap: onRoom,
-        ),
-        const SizedBox(height: 8),
-        ChoiceChipBar<UnitStatus>(
-          options: const [
-            ChipOption(value: UnitStatus.free, label: 'Свободна'),
-            ChipOption(value: UnitStatus.work, label: 'В работе'),
-            ChipOption(value: UnitStatus.hold, label: 'Бронь'),
-            ChipOption(value: UnitStatus.design, label: 'Оформление'),
-          ],
-          isSelected: statuses.contains,
-          onTap: onStatus,
-          trailing: managers.isEmpty
-              ? null
-              : _ManagerFilter(
-                  managers: managers,
-                  managerId: managerId,
-                  onManager: onManager,
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Row(
+            children: [
+              // Блок — одиночный выбор.
+              _FilterDropdown(
+                label: 'Блок $block',
+                active: true,
+                onTap: () => _pickSingle<String>(
+                  context,
+                  title: 'Блок',
+                  options: [for (final n in blockNames) (n, 'Блок $n')],
+                  selected: block,
+                  onPick: onBlock,
                 ),
+              ),
+              const SizedBox(width: 8),
+              // Комнаты — множественный выбор.
+              _FilterDropdown(
+                label: rooms.isEmpty
+                    ? 'Комнаты'
+                    : 'Комнаты · ${rooms.length}',
+                active: rooms.isNotEmpty,
+                onTap: () => _pickMulti<int>(
+                  context,
+                  title: 'Комнатность',
+                  options: [
+                    for (var i = 0; i < _roomLabels.length; i++)
+                      (i, _roomLabels[i]),
+                  ],
+                  selected: rooms,
+                  onApply: onRooms,
+                ),
+              ),
+              const SizedBox(width: 8),
+              // Статус — множественный выбор.
+              _FilterDropdown(
+                label: statuses.isEmpty
+                    ? 'Статус'
+                    : 'Статус · ${statuses.length}',
+                active: statuses.isNotEmpty,
+                onTap: () => _pickMulti<UnitStatus>(
+                  context,
+                  title: 'Статус',
+                  options: _statusOptions,
+                  selected: statuses,
+                  onApply: onStatuses,
+                ),
+              ),
+              if (managers.isNotEmpty) ...[
+                const SizedBox(width: 8),
+                _FilterDropdown(
+                  label: managerId == null
+                      ? 'Менеджер'
+                      : managers.firstWhere((m) => m.id == managerId).shortName,
+                  active: managerId != null,
+                  icon: Icons.person_outline,
+                  onTap: () => _pickSingle<String?>(
+                    context,
+                    title: 'Менеджер',
+                    options: [
+                      (null, 'Все менеджеры'),
+                      for (final m in managers) (m.id, m.shortName),
+                    ],
+                    selected: managerId,
+                    onPick: onManager,
+                  ),
+                ),
+              ],
+            ],
+          ),
         ),
         const SizedBox(height: 11),
         Padding(
@@ -403,54 +449,159 @@ class _FilterPanel extends StatelessWidget {
       ],
     ),
   );
+
+  Future<void> _pickSingle<T>(
+    BuildContext context, {
+    required String title,
+    required List<(T, String)> options,
+    required T selected,
+    required ValueChanged<T> onPick,
+  }) => showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    builder: (_) => SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(6, 0, 6, 12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+              child: Text(title, style: AppTextStyles.h2),
+            ),
+            for (final (value, label) in options)
+              ListTile(
+                title: Text(label),
+                dense: true,
+                trailing: value == selected
+                    ? const Icon(Icons.check, color: AppColors.brand, size: 20)
+                    : null,
+                onTap: () {
+                  onPick(value);
+                  Navigator.of(context).pop();
+                },
+              ),
+          ],
+        ),
+      ),
+    ),
+  );
+
+  Future<void> _pickMulti<T>(
+    BuildContext context, {
+    required String title,
+    required List<(T, String)> options,
+    required Set<T> selected,
+    required ValueChanged<Set<T>> onApply,
+  }) {
+    final local = {...selected};
+    return showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => StatefulBuilder(
+        builder: (context, setSheet) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(6, 0, 6, 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+                  child: Text(title, style: AppTextStyles.h2),
+                ),
+                for (final (value, label) in options)
+                  CheckboxListTile(
+                    value: local.contains(value),
+                    title: Text(label),
+                    dense: true,
+                    controlAffinity: ListTileControlAffinity.leading,
+                    activeColor: AppColors.brand,
+                    onChanged: (v) => setSheet(
+                      () => v == true ? local.add(value) : local.remove(value),
+                    ),
+                  ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => setSheet(local.clear),
+                          style: OutlinedButton.styleFrom(
+                            minimumSize: const Size.fromHeight(46),
+                            side: const BorderSide(color: AppColors.line),
+                            foregroundColor: AppColors.ink2,
+                          ),
+                          child: const Text('Сбросить'),
+                        ),
+                      ),
+                      const SizedBox(width: 9),
+                      Expanded(
+                        child: FilledButton(
+                          onPressed: () {
+                            onApply(local);
+                            Navigator.of(context).pop();
+                          },
+                          child: const Text('Применить'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
-class _ManagerFilter extends StatelessWidget {
-  const _ManagerFilter({
-    required this.managers,
-    required this.managerId,
-    required this.onManager,
+class _FilterDropdown extends StatelessWidget {
+  const _FilterDropdown({
+    required this.label,
+    required this.active,
+    required this.onTap,
+    this.icon,
   });
 
-  final List<ManagerModel> managers;
-  final String? managerId;
-  final ValueChanged<String?> onManager;
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+  final IconData? icon;
 
   @override
-  Widget build(BuildContext context) => PopupMenuButton<String?>(
-    onSelected: (v) => onManager(v == '' ? null : v),
-    itemBuilder: (_) => [
-      const PopupMenuItem(value: '', child: Text('Все менеджеры')),
-      for (final m in managers)
-        PopupMenuItem(value: m.id, child: Text(m.shortName)),
-    ],
+  Widget build(BuildContext context) => GestureDetector(
+    onTap: onTap,
     child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
       decoration: BoxDecoration(
-        color: managerId != null ? AppColors.brand : AppColors.surface,
-        border: Border.all(
-          color: managerId != null ? AppColors.brand : AppColors.line,
-        ),
+        color: active ? AppColors.brand : AppColors.surface,
+        border: Border.all(color: active ? AppColors.brand : AppColors.line),
         borderRadius: BorderRadius.circular(11),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            Icons.person_outline,
-            size: 15,
-            color: managerId != null ? Colors.white : AppColors.ink2,
-          ),
-          const SizedBox(width: 5),
+          if (icon != null) ...[
+            Icon(icon, size: 15, color: active ? Colors.white : AppColors.ink2),
+            const SizedBox(width: 5),
+          ],
           Text(
-            managerId == null
-                ? 'Менеджер'
-                : managers.firstWhere((m) => m.id == managerId).shortName,
+            label,
             style: TextStyle(
               fontSize: 13.5,
               fontWeight: FontWeight.w600,
-              color: managerId != null ? Colors.white : AppColors.ink2,
+              color: active ? Colors.white : AppColors.ink2,
             ),
+          ),
+          const SizedBox(width: 4),
+          Icon(
+            Icons.keyboard_arrow_down,
+            size: 17,
+            color: active ? Colors.white : AppColors.ink3,
           ),
         ],
       ),

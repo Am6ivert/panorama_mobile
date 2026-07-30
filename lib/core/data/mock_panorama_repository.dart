@@ -500,12 +500,35 @@ class MockPanoramaRepository implements PanoramaRepository {
     yield* _unitsController.stream;
   }
 
+  /// Проверка лимита активных операций менеджера (FR-07.9 и смежные).
+  void _ensureUnderLimit(
+    ManagerModel m,
+    UnitStatus status,
+    int limit,
+    String what,
+  ) {
+    if (m.isAdmin) return;
+    final count =
+        _units.where((u) => u.heldById == m.id && u.status == status).length;
+    if (count >= limit) {
+      throw LimitExceeded(
+        'Достигнут лимит: $what — $limit. Освободите одну, чтобы продолжить.',
+      );
+    }
+  }
+
   @override
   Future<UnitModel> takeToWork({
     required String unitId,
     required ManagerModel manager,
     required ClientModel client,
   }) async {
+    _ensureUnderLimit(
+      manager,
+      UnitStatus.work,
+      AppConfig.workLimitPerManager,
+      'квартир в работе',
+    );
     final unit = await _apply(
       unitId,
       status: UnitStatus.work,
@@ -533,6 +556,12 @@ class MockPanoramaRepository implements PanoramaRepository {
     required ManagerModel manager,
     required ClientModel client,
   }) async {
+    _ensureUnderLimit(
+      manager,
+      UnitStatus.hold,
+      AppConfig.bookingLimitPerManager,
+      'активных броней',
+    );
     final unit = await _apply(
       unitId,
       status: UnitStatus.hold,
@@ -1075,6 +1104,14 @@ class MockPanoramaRepository implements PanoramaRepository {
     final units = <UnitModel>[];
     final managers = _managers;
 
+    // Держим сид ниже лимитов (FR-07.9): у каждого менеджера не более
+    // [seedCap] квартир каждого «занятого» статуса, чтобы оставался запас
+    // на новые действия. Излишек считаем проданным.
+    const seedCap = 3;
+    final held = {
+      for (final m in managers) m.id: <UnitStatus, int>{},
+    };
+
     for (var ci = 0; ci < _complexes.length; ci++) {
       final complex = _complexes[ci];
       final random = Random(1000 + ci * 97);
@@ -1114,9 +1151,18 @@ class MockPanoramaRepository implements PanoramaRepository {
               status = UnitStatus.offMarket;
             }
 
-            final holder = status.isTaken
-                ? managers[random.nextInt(managers.length)]
-                : null;
+            ManagerModel? holder;
+            if (status.isTaken) {
+              final under = managers
+                  .where((m) => (held[m.id]![status] ?? 0) < seedCap)
+                  .toList();
+              if (under.isEmpty) {
+                status = UnitStatus.sold; // излишек — продано
+              } else {
+                holder = under[random.nextInt(under.length)];
+                held[holder.id]![status] = (held[holder.id]![status] ?? 0) + 1;
+              }
+            }
 
             units.add(
               UnitModel(

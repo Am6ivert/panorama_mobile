@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/config/app_config.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
+import '../../../core/data/panorama_repository.dart';
 import '../../../core/models/complex_model.dart';
 import '../../../core/models/unit_model.dart';
 import '../../../core/models/unit_status.dart';
@@ -291,14 +291,7 @@ class _Actions extends ConsumerWidget {
             color: AppColors.work,
             onTap: () => _take(context, ref),
           ),
-          _Row([
-            _Button(label: 'Забронировать', onTap: () => _book(context, ref)),
-            _Button(
-              label: 'Отправить',
-              secondary: true,
-              onTap: () => _share(context),
-            ),
-          ]),
+          _Button(label: 'Забронировать', onTap: () => _book(context, ref)),
           _Button(
             label: 'Похожие варианты',
             outlined: true,
@@ -320,18 +313,11 @@ class _Actions extends ConsumerWidget {
             label: 'Клиент согласен — забронировать',
             onTap: () => _book(context, ref),
           ),
-          _Row([
-            _Button(
-              label: 'Освободить',
-              secondary: true,
-              onTap: () => _release(context, ref),
-            ),
-            _Button(
-              label: 'Отправить',
-              secondary: true,
-              onTap: () => _share(context),
-            ),
-          ]),
+          _Button(
+            label: 'Освободить',
+            secondary: true,
+            onTap: () => _release(context, ref),
+          ),
         ]);
       case UnitStatus.hold when mine:
         buttons.addAll([
@@ -449,51 +435,45 @@ class _Actions extends ConsumerWidget {
     if (manager == null) return;
 
     final messenger = ScaffoldMessenger.of(context);
-    final updated = await ref
-        .read(panoramaRepositoryProvider)
-        .takeToWork(unitId: unit.id, manager: manager, client: client);
-    ref.invalidate(dealsProvider);
-    if (context.mounted) Navigator.of(context).pop();
-    _snack(
-      messenger,
-      'Квартира закреплена за вами',
-      'Кв. №${unit.number}'
-          '${updated.heldUntil == null ? '' : ' · ${TimeFormat.until(updated.heldUntil!)}'}.',
-    );
+    try {
+      final updated = await ref
+          .read(panoramaRepositoryProvider)
+          .takeToWork(unitId: unit.id, manager: manager, client: client);
+      ref.invalidate(dealsProvider);
+      if (context.mounted) Navigator.of(context).pop();
+      _snack(
+        messenger,
+        'Квартира закреплена за вами',
+        'Кв. №${unit.number}'
+            '${updated.heldUntil == null ? '' : ' · ${TimeFormat.until(updated.heldUntil!)}'}.',
+      );
+    } on LimitExceeded catch (e) {
+      _snack(messenger, 'Лимит достигнут', e.message);
+    }
   }
 
   Future<void> _book(BuildContext context, WidgetRef ref) async {
     final manager = ref.read(currentUserProvider);
     if (manager == null) return;
 
-    // Лимит активных броней (FR-07.9).
-    final active = (ref.read(unitsProvider).value ?? const [])
-        .where((u) => u.heldBy(manager.id) && u.status == UnitStatus.hold)
-        .length;
-    if (active >= AppConfig.bookingLimitPerManager && !manager.isAdmin) {
-      _snack(
-        ScaffoldMessenger.of(context),
-        'Лимит броней',
-        'У вас уже ${AppConfig.bookingLimitPerManager} активных броней. '
-            'Снимите одну, чтобы забронировать ещё.',
-      );
-      return;
-    }
-
     final client = await pickClient(context);
     if (client == null || !context.mounted) return;
 
     final messenger = ScaffoldMessenger.of(context);
-    await ref
-        .read(panoramaRepositoryProvider)
-        .book(unitId: unit.id, manager: manager, client: client);
-    ref.invalidate(dealsProvider);
-    if (context.mounted) Navigator.of(context).pop();
-    _snack(
-      messenger,
-      'Бронь оформлена',
-      'Кв. №${unit.number} держится 3 дня. Офис уведомлён.',
-    );
+    try {
+      await ref
+          .read(panoramaRepositoryProvider)
+          .book(unitId: unit.id, manager: manager, client: client);
+      ref.invalidate(dealsProvider);
+      if (context.mounted) Navigator.of(context).pop();
+      _snack(
+        messenger,
+        'Бронь оформлена',
+        'Кв. №${unit.number} держится 3 дня. Офис уведомлён.',
+      );
+    } on LimitExceeded catch (e) {
+      _snack(messenger, 'Лимит достигнут', e.message);
+    }
   }
 
   Future<void> _release(BuildContext context, WidgetRef ref) async {
@@ -579,13 +559,6 @@ class _Actions extends ConsumerWidget {
     ScaffoldMessenger.of(context),
     'Запрос отправлен администратору',
     'Продление брони кв. №${unit.number} подтверждает администратор.',
-  );
-
-  void _share(BuildContext context) => _snack(
-    ScaffoldMessenger.of(context),
-    'Отправлено клиенту',
-    'Кв. №${unit.number} · ${unit.layoutName} · ${unit.area} м² · '
-        '${unit.floor} этаж — описание ушло в WhatsApp',
   );
 
   void _similar(BuildContext context, WidgetRef ref) {

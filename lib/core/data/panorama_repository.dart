@@ -24,6 +24,15 @@ class LoginFailed extends LoginResult {
   final String message;
 }
 
+/// Превышен лимит активных операций менеджера (FR-07.9 и смежные).
+class LimitExceeded implements Exception {
+  const LimitExceeded(this.message);
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
 /// Одна группа этажей мастера массового создания (FR-03.2).
 class FloorGroupSpec {
   const FloorGroupSpec({
