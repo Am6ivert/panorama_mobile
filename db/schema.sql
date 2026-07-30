@@ -12,9 +12,11 @@
 --   id, created_at, updated_at, deleted_at, created_by, updated_by, version.
 -- =============================================================================
 
-BEGIN;
+-- Требует расширения pgcrypto в этой БД (для crypt() в seed.sql). Его создаёт
+-- суперпользователь через db/init.sql — до запуска этого файла.
+-- gen_random_uuid() встроена в PostgreSQL 13+ и расширения не требует.
 
-CREATE EXTENSION IF NOT EXISTS "pgcrypto";  -- gen_random_uuid()
+BEGIN;
 
 -- =============================================================================
 -- 1. Пользователи и доступ

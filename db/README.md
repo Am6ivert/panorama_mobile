@@ -4,57 +4,55 @@
 колонок нет ни в одной таблице.
 
 Файлы:
+- [`init.sql`](init.sql) — роль приложения, база, расширение `pgcrypto` (запускать суперпользователем);
 - [`schema.sql`](schema.sql) — таблицы, индексы, ограничения;
-- [`seed.sql`](seed.sql) — роли, справочники, настройки, демо-учётки и пример объекта.
+- [`seed.sql`](seed.sql) — роли, справочники, настройки, демо-учётки и пример объекта;
+- [`setup.ps1`](setup.ps1) — всё сразу одним скриптом.
 
 ---
 
 ## 1. Установка PostgreSQL
 
-**Windows:** скачать установщик с https://www.postgresql.org/download/windows/
-(версия 14 или новее), поставить с pgAdmin. При установке задать пароль
-пользователя `postgres`.
+Если PostgreSQL 14+ уже установлен — пропусти этот шаг. Иначе на Windows:
 
-Проверка (в «SQL Shell (psql)» или обычном терминале, если `psql` в PATH):
-
-```bash
-psql --version
+```powershell
+winget install --id PostgreSQL.PostgreSQL.17 -e
 ```
 
-## 2. Создать базу и пользователя приложения
+или установщик с https://www.postgresql.org/download/windows/. При установке
+задаётся пароль суперпользователя `postgres` — он понадобится ниже.
 
-Зайти суперпользователем и выполнить:
+## 2. Настройка одним скриптом (рекомендуется)
 
-```bash
-psql -U postgres
+Из корня проекта:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File db\setup.ps1
 ```
 
-```sql
-CREATE ROLE panorama WITH LOGIN PASSWORD 'panorama';
-CREATE DATABASE panorama OWNER panorama;
-\q
+Скрипт сам найдёт `psql`, спросит пароль суперпользователя `postgres` (нужен
+только для создания роли и базы, нигде не сохраняется) и накатит `init.sql`,
+`schema.sql`, `seed.sql`, затем покажет проверку.
+
+## 3. Либо вручную (три шага)
+
+```powershell
+# 1) роль + база + pgcrypto — суперпользователем
+psql -U postgres -h localhost -f db\init.sql
+# 2) схема и данные — под ролью приложения (пароль panorama)
+psql -U panorama -h localhost -d panorama -f db\schema.sql
+psql -U panorama -h localhost -d panorama -f db\seed.sql
 ```
 
-## 3. Накатить схему и начальные данные
-
-Из папки `db/` проекта:
-
-```bash
-psql -U panorama -d panorama -f schema.sql
-```
-
-```bash
-psql -U panorama -d panorama -f seed.sql
-```
-
-> `seed.sql` использует расширение `pgcrypto` (включается в `schema.sql`) и хеширует
-> пароль `0000` алгоритмом bcrypt. Пароли хранятся **только в виде хеша** (ТЗ 5.2).
+> `pgcrypto` создаётся в `init.sql` суперпользователем (обычной роли это не
+> разрешено). `seed.sql` хеширует пароль `0000` алгоритмом bcrypt — пароли
+> хранятся **только в виде хеша** (ТЗ 5.2).
 
 ## 4. Проверка
 
-```bash
-psql -U panorama -d panorama -c "SELECT count(*) FROM apartments;"   # ожидаем 96
-psql -U panorama -d panorama -c "SELECT login, full_name FROM users;"
+```powershell
+psql -U panorama -h localhost -d panorama -c "SELECT count(*) FROM apartments;"  # 96
+psql -U panorama -h localhost -d panorama -c "SELECT login, full_name FROM users;"
 ```
 
 Логины демо-учёток: `admin`, `azamat`, `elvira`, `nurlan`, `bekzat` — пароль `0000`.
