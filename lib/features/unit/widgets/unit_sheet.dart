@@ -429,8 +429,8 @@ class _Actions extends ConsumerWidget {
   }
 
   Future<void> _take(BuildContext context, WidgetRef ref) async {
-    final client = await pickClient(context);
-    if (client == null || !context.mounted) return;
+    final pick = await pickClient(context);
+    if (pick == null || !context.mounted) return;
     final manager = ref.read(currentUserProvider);
     if (manager == null) return;
 
@@ -438,7 +438,7 @@ class _Actions extends ConsumerWidget {
     try {
       final updated = await ref
           .read(panoramaRepositoryProvider)
-          .takeToWork(unitId: unit.id, manager: manager, client: client);
+          .takeToWork(unitId: unit.id, manager: manager, client: pick.client);
       ref.invalidate(dealsProvider);
       if (context.mounted) Navigator.of(context).pop();
       _snack(
@@ -456,14 +456,14 @@ class _Actions extends ConsumerWidget {
     final manager = ref.read(currentUserProvider);
     if (manager == null) return;
 
-    final client = await pickClient(context);
-    if (client == null || !context.mounted) return;
+    final pick = await pickClient(context);
+    if (pick == null || !context.mounted) return;
 
     final messenger = ScaffoldMessenger.of(context);
     try {
       await ref
           .read(panoramaRepositoryProvider)
-          .book(unitId: unit.id, manager: manager, client: client);
+          .book(unitId: unit.id, manager: manager, client: pick.client);
       ref.invalidate(dealsProvider);
       if (context.mounted) Navigator.of(context).pop();
       _snack(

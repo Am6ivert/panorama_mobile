@@ -109,6 +109,15 @@ abstract interface class PanoramaRepository {
 
   Future<List<ComplexModel>> fetchComplexes();
 
+  /// Создание нового объекта (ЖК) — FR-02.1.
+  Future<ComplexModel> createComplex({
+    required String name,
+    required String address,
+    required String deadline,
+    required String segment,
+    required ManagerModel by,
+  });
+
   /// Массовое создание квартир блока одной транзакцией (FR-03).
   Future<int> bulkCreateBlock(BulkBlockSpec spec, {required ManagerModel by});
 
@@ -146,19 +155,19 @@ abstract interface class PanoramaRepository {
 
   Stream<List<UnitModel>> watchUnits();
 
-  /// Закрепить квартиру за менеджером на время показа. Клиент обязателен
-  /// (FR-07.1).
+  /// Закрепить квартиру за менеджером на время показа. Данные клиента
+  /// опциональны — можно внести позже.
   Future<UnitModel> takeToWork({
     required String unitId,
     required ManagerModel manager,
-    required ClientModel client,
+    ClientModel? client,
   });
 
-  /// Поставить бронь (срок по умолчанию 3 дня, FR-07.6).
+  /// Поставить бронь (срок по умолчанию 3 дня, FR-07.6). Клиент опционален.
   Future<UnitModel> book({
     required String unitId,
     required ManagerModel manager,
-    required ClientModel client,
+    ClientModel? client,
   });
 
   /// Вернуть квартиру в свободный фонд.

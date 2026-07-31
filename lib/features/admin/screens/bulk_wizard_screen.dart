@@ -10,6 +10,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../shared/widgets/app_header.dart';
 import '../../../shared/widgets/choice_chip_bar.dart';
 import '../../../shared/widgets/section_title.dart';
+import '../widgets/create_complex_sheet.dart';
 
 /// Черновик одной группы этажей в UI.
 class _GroupDraft {
@@ -99,6 +100,19 @@ class _BulkWizardScreenState extends ConsumerState<BulkWizardScreen> {
                   ],
                   isSelected: (id) => id == _complexId,
                   onTap: (id) => setState(() => _complexId = id),
+                  trailing: OutlinedButton.icon(
+                    onPressed: _createComplex,
+                    icon: const Icon(Icons.add, size: 16),
+                    style: OutlinedButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      side: const BorderSide(color: AppColors.brand),
+                      foregroundColor: AppColors.brand,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(11),
+                      ),
+                    ),
+                    label: const Text('Новый объект'),
+                  ),
                 ),
                 const SectionTitle('Параметры блока'),
                 Padding(
@@ -215,6 +229,12 @@ class _BulkWizardScreenState extends ConsumerState<BulkWizardScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _createComplex() async {
+    final complex = await createComplexSheet(context);
+    if (complex == null || !mounted) return;
+    setState(() => _complexId = complex.id);
   }
 
   Future<void> _create() async {

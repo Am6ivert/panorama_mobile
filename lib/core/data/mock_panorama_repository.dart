@@ -151,8 +151,9 @@ class MockPanoramaRepository implements PanoramaRepository {
 
   // --- Справочник объектов ----------------------------------------------------
 
-  static const _complexes = [
-    ComplexModel(
+  // Изменяемый — администратор может создавать новые объекты (FR-02.1).
+  final List<ComplexModel> _complexes = [
+    const ComplexModel(
       id: 'city',
       name: 'Панорама Сити',
       address: 'ул. Ахунбаева, 121',
@@ -332,7 +333,41 @@ class MockPanoramaRepository implements PanoramaRepository {
   @override
   Future<List<ComplexModel>> fetchComplexes() async {
     await _latency();
-    return _complexes;
+    return List.unmodifiable(_complexes);
+  }
+
+  static const _covers = <(int, int)>[
+    (0xFF1E3A8A, 0xFF3B82F6),
+    (0xFF065F46, 0xFF10B981),
+    (0xFF7C2D12, 0xFFF59E0B),
+    (0xFF4C1D95, 0xFF8B5CF6),
+    (0xFF9F1239, 0xFFF43F5E),
+    (0xFF0F766E, 0xFF2DD4BF),
+  ];
+
+  @override
+  Future<ComplexModel> createComplex({
+    required String name,
+    required String address,
+    required String deadline,
+    required String segment,
+    required ManagerModel by,
+  }) async {
+    await _latency();
+    final cover = _covers[_complexes.length % _covers.length];
+    final complex = ComplexModel(
+      id: _nextId('cx'),
+      name: name,
+      address: address,
+      deadline: deadline,
+      segment: segment,
+      coverStart: cover.$1,
+      coverEnd: cover.$2,
+      blocks: const [],
+    );
+    _complexes.add(complex);
+    _log(by, 'Создание объекта', name);
+    return complex;
   }
 
   @override
@@ -521,7 +556,7 @@ class MockPanoramaRepository implements PanoramaRepository {
   Future<UnitModel> takeToWork({
     required String unitId,
     required ManagerModel manager,
-    required ClientModel client,
+    ClientModel? client,
   }) async {
     _ensureUnderLimit(
       manager,
@@ -536,7 +571,7 @@ class MockPanoramaRepository implements PanoramaRepository {
       client: client,
       until: DateTime.now().add(AppConfig.workHoldDuration),
       event: UnitEventKind.taken,
-      title: 'Взята в работу — ${client.name}',
+      title: client == null ? 'Взята в работу' : 'Взята в работу — ${client.name}',
       action: 'Взятие в работу',
     );
     // Остальные менеджеры видят, что квартиру уже показывают.
@@ -554,7 +589,7 @@ class MockPanoramaRepository implements PanoramaRepository {
   Future<UnitModel> book({
     required String unitId,
     required ManagerModel manager,
-    required ClientModel client,
+    ClientModel? client,
   }) async {
     _ensureUnderLimit(
       manager,
@@ -569,10 +604,10 @@ class MockPanoramaRepository implements PanoramaRepository {
       client: client,
       until: DateTime.now().add(AppConfig.bookingDuration),
       event: UnitEventKind.booked,
-      title: 'Бронь на 3 дня — ${client.name}',
+      title: client == null ? 'Бронь на 3 дня' : 'Бронь на 3 дня — ${client.name}',
       action: 'Бронирование',
     );
-    _ensureDeal(unit, manager, client, DealStage.booking);
+    if (client != null) _ensureDeal(unit, manager, client, DealStage.booking);
     // FR-11.1: квартира забронирована → администратор и остальные менеджеры
     // отдела (чтобы никто не продавал занятую квартиру).
     _notifyTeam(

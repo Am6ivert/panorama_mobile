@@ -91,6 +91,25 @@ class ApiPanoramaRepository implements PanoramaRepository {
       (await _api.getList('/complexes')).map(ComplexModel.fromJson).toList();
 
   @override
+  Future<ComplexModel> createComplex({
+    required String name,
+    required String address,
+    required String deadline,
+    required String segment,
+    required ManagerModel by,
+  }) async => ComplexModel.fromJson(
+    await _api.post(
+      '/complexes',
+      body: {
+        'name': name,
+        'address': address,
+        'deadline': deadline,
+        'segment': segment,
+      },
+    ),
+  );
+
+  @override
   Future<int> bulkCreateBlock(
     BulkBlockSpec spec, {
     required ManagerModel by,
@@ -162,11 +181,11 @@ class ApiPanoramaRepository implements PanoramaRepository {
   Future<UnitModel> takeToWork({
     required String unitId,
     required ManagerModel manager,
-    required ClientModel client,
+    ClientModel? client,
   }) async => UnitModel.fromJson(
     await _api.post(
       '/units/$unitId/take',
-      body: {'manager_id': manager.id, 'client_id': client.id},
+      body: {'manager_id': manager.id, 'client_id': client?.id},
     ),
   );
 
@@ -174,11 +193,11 @@ class ApiPanoramaRepository implements PanoramaRepository {
   Future<UnitModel> book({
     required String unitId,
     required ManagerModel manager,
-    required ClientModel client,
+    ClientModel? client,
   }) async => UnitModel.fromJson(
     await _api.post(
       '/units/$unitId/book',
-      body: {'manager_id': manager.id, 'client_id': client.id},
+      body: {'manager_id': manager.id, 'client_id': client?.id},
     ),
   );
 

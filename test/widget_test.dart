@@ -223,6 +223,57 @@ void main() {
     expect(adminBooked.status, UnitStatus.hold);
   });
 
+  test('взять в работу и забронировать можно без клиента', () async {
+    final manager = (await repository.fetchUsers())
+        .firstWhere((u) => u.role == UserRole.manager);
+    final free = (await repository.fetchUnits())
+        .where((u) => u.status == UnitStatus.free)
+        .toList();
+
+    final worked = await repository.takeToWork(
+      unitId: free[0].id,
+      manager: manager,
+    );
+    expect(worked.status, UnitStatus.work);
+    expect(worked.clientId, isNull);
+
+    final booked = await repository.book(unitId: free[1].id, manager: manager);
+    expect(booked.status, UnitStatus.hold);
+    expect(booked.clientId, isNull);
+  });
+
+  test('администратор создаёт новый объект (ЖК)', () async {
+    final admin = (await repository.fetchUsers()).firstWhere((u) => u.isAdmin);
+    final before = (await repository.fetchComplexes()).length;
+
+    final created = await repository.createComplex(
+      name: 'Панорама Гарден',
+      address: 'ул. Ибраимова, 42',
+      deadline: 'сдача 4 кв. 2027',
+      segment: 'комфорт',
+      by: admin,
+    );
+    expect(created.name, 'Панорама Гарден');
+    expect(created.blocks, isEmpty);
+
+    final after = await repository.fetchComplexes();
+    expect(after.length, before + 1);
+
+    // В новый объект можно добавить блок мастером.
+    final count = await repository.bulkCreateBlock(
+      BulkBlockSpec(
+        complexId: created.id,
+        blockName: 'А',
+        startNumber: 1,
+        groups: const [
+          FloorGroupSpec(floorFrom: 1, floorTo: 5, roomsPerPosition: [1, 2]),
+        ],
+      ),
+      by: admin,
+    );
+    expect(count, 10);
+  });
+
   test('клиент заводится за менеджером и не денежный', () async {
     final manager = (await repository.fetchUsers())
         .firstWhere((u) => u.role == UserRole.manager);

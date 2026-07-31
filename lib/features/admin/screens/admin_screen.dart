@@ -9,6 +9,7 @@ import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../shared/widgets/app_header.dart';
 import '../../../shared/widgets/section_title.dart';
+import '../widgets/create_complex_sheet.dart';
 
 /// Админ-панель (ТЗ 3): объекты, блоки, квартиры, мастер создания,
 /// пользователи, журнал. Продавцу пункт недоступен на уровне маршрутизации.
@@ -46,6 +47,13 @@ class AdminScreen extends ConsumerWidget {
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: Column(
                     children: [
+                      _ActionCard(
+                        icon: Icons.add_business_outlined,
+                        title: 'Создать объект (ЖК)',
+                        subtitle: 'Новый жилой комплекс (FR-02.1)',
+                        color: AppColors.free,
+                        onTap: () => _createComplex(context, ref),
+                      ),
                       _ActionCard(
                         icon: Icons.auto_awesome_motion,
                         title: 'Мастер массового создания',
@@ -99,6 +107,18 @@ class AdminScreen extends ConsumerWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Future<void> _createComplex(BuildContext context, WidgetRef ref) async {
+    final complex = await createComplexSheet(context);
+    if (complex == null || !context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Объект «${complex.name}» создан. Добавьте блоки мастером создания.',
+        ),
       ),
     );
   }

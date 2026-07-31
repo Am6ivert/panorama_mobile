@@ -125,12 +125,9 @@ void main() {
     await tester.tap(find.text('Мастер массового создания'));
     await tester.pumpAndSettle();
 
-    // Мастер открылся и посчитал предпросмотр (48 квартир по умолчанию).
+    // Мастер открылся (заголовок + управление объектом).
     expect(find.text('Массовое создание'), findsOneWidget);
-    expect(
-      find.textContaining('Создать', skipOffstage: false),
-      findsNothing, // ленивый ListView ещё не построил нижнюю кнопку — ок
-    );
+    expect(find.text('Новый объект'), findsOneWidget);
     expect(tester.takeException(), isNull);
     // Само создание блока покрыто тестом уровня репозитория в widget_test.dart.
   });
