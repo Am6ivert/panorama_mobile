@@ -623,12 +623,51 @@ class Api {
            VALUES (@u, @a, 'apartment', @id)''',
         {'u': managerId, 'a': 'Смена статуса → $toStatus', 'id': id},
       );
+      await _syncDeal(s, id, toStatus);
       return true;
     });
     if (!ok) {
       return jsonError(409, 'Статус квартиры изменился — обновите фонд.');
     }
     return jsonOk(await _unitById(id));
+  }
+
+  static const _stageByStatus = {
+    'work': 'show',
+    'hold': 'booking',
+    'design': 'design',
+    'sold': 'done',
+  };
+
+  /// Синхронизирует сделку с состоянием квартиры (FR-08.3, FR-08.4 — не более
+  /// одной активной сделки на квартиру).
+  Future<void> _syncDeal(TxSession s, String aptId, String toStatus) async {
+    final stage = _stageByStatus[toStatus];
+    if (stage == null) return; // free/off_market — сделку не трогаем
+    final apt = await s.one(
+      'SELECT client_id::text AS c, held_by_id::text AS h FROM apartments WHERE id=@id',
+      {'id': aptId},
+    );
+    final clientId = apt?['c'] as String?;
+    final sellerId = apt?['h'] as String?;
+    final active = await s.one(
+      '''SELECT id::text AS id FROM deals
+         WHERE apartment_id=@a AND deleted_at IS NULL
+               AND stage NOT IN ('done','rejected')''',
+      {'a': aptId},
+    );
+    if (active != null) {
+      await s.query(
+        'UPDATE deals SET stage=@st, updated_at=now(), version=version+1 WHERE id=@id',
+        {'st': stage, 'id': active['id']},
+      );
+    } else if (clientId != null && sellerId != null && stage != 'done') {
+      await s.query(
+        '''INSERT INTO deals (client_id, apartment_id, seller_id, stage)
+           VALUES (@c, @a, @s, @st)''',
+        {'c': clientId, 'a': aptId, 's': sellerId, 'st': stage},
+      );
+    }
   }
 
   Future<void> _notifyTeam(
@@ -649,10 +688,34 @@ class Api {
   // Сделки, уведомления, аудит
   // ===========================================================================
 
-  Future<Response> _deals(Request request) async => jsonOk(const []);
+  static const _dealSelect = '''
+    SELECT d.id::text AS id,
+           d.client_id::text AS client_id, cl.full_name AS client_name,
+           d.apartment_id::text AS unit_id,
+           (c.name || ' · ' || b.name || ' · №' || a.number::text) AS unit_label,
+           d.seller_id::text AS seller_id, su.full_name AS seller_name,
+           d.stage,
+           to_char(d.created_at AT TIME ZONE 'Asia/Bishkek','YYYY-MM-DD"T"HH24:MI:SS.US') AS created_at,
+           to_char(d.next_action_at AT TIME ZONE 'Asia/Bishkek','YYYY-MM-DD"T"HH24:MI:SS.US') AS next_action_at
+    FROM deals d
+    JOIN clients cl ON cl.id = d.client_id
+    JOIN apartments a ON a.id = d.apartment_id
+    JOIN complexes c ON c.id = a.complex_id
+    JOIN blocks b ON b.id = a.block_id
+    JOIN users su ON su.id = d.seller_id
+    WHERE d.deleted_at IS NULL''';
 
-  Future<Response> _dealStage(Request request, String id) async =>
-      jsonOk({'id': id});
+  Future<Response> _deals(Request request) async =>
+      jsonOk(await db.query('$_dealSelect ORDER BY d.created_at DESC'));
+
+  Future<Response> _dealStage(Request request, String id) async {
+    final b = await readJson(request);
+    await db.query(
+      'UPDATE deals SET stage=@s, updated_at=now(), version=version+1 WHERE id=@id',
+      {'s': b['stage'], 'id': id},
+    );
+    return jsonOk(await db.one('$_dealSelect AND d.id=@id', {'id': id}));
+  }
 
   Future<Response> _notifications(Request request) async {
     final userId = request.url.queryParameters['user_id'];

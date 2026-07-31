@@ -52,6 +52,32 @@ void main() {
     expect(released.heldById, isNull);
   });
 
+  test('сделка создаётся при взятии с клиентом и растёт по стадиям', () async {
+    final manager =
+        (await repo.fetchUsers()).firstWhere((u) => u.role == UserRole.manager);
+    final client = await repo.addClient(
+      name: 'Проверка Сделки',
+      phone: '+996 700 55-44-33',
+      seller: manager,
+      rooms: 2,
+    );
+    final free = (await repo.fetchUnits())
+        .firstWhere((u) => u.status == UnitStatus.free);
+
+    await repo.takeToWork(unitId: free.id, manager: manager, client: client);
+    final deals = await repo.fetchDeals();
+    final deal = deals.firstWhere((d) => d.unitId == free.id);
+    expect(deal.clientName, 'Проверка Сделки');
+    expect(deal.stage.wire, 'show');
+    expect(deal.unitLabel, contains('№'));
+
+    await repo.book(unitId: free.id, manager: manager, client: client);
+    final booked = (await repo.fetchDeals()).firstWhere((d) => d.unitId == free.id);
+    expect(booked.stage.wire, 'booking');
+
+    await repo.release(unitId: free.id, manager: manager);
+  });
+
   test('уведомления доходят другому менеджеру', () async {
     final managers = (await repo.fetchUsers())
         .where((u) => u.role == UserRole.manager)
