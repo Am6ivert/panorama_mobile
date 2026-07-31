@@ -11,6 +11,7 @@ import '../../../core/providers/data_providers.dart';
 import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/time_format.dart';
+import '../../../shared/widgets/confirm_dialog.dart';
 import '../../search/providers/search_filter_provider.dart';
 import 'client_pick_sheet.dart';
 import 'unit_plan.dart';
@@ -479,6 +480,18 @@ class _Actions extends ConsumerWidget {
   Future<void> _release(BuildContext context, WidgetRef ref) async {
     final manager = ref.read(currentUserProvider);
     if (manager == null) return;
+    // Снятие чужой брони/работы (админом) — подтверждаем.
+    if (!mine) {
+      final ok = await confirmDialog(
+        context,
+        title: 'Снять бронь',
+        message: 'Кв. №${unit.number} держит ${unit.heldByName ?? 'другой менеджер'}. '
+            'Снять и вернуть в свободные?',
+        confirmLabel: 'Снять',
+        danger: true,
+      );
+      if (!ok || !context.mounted) return;
+    }
     final messenger = ScaffoldMessenger.of(context);
     await ref
         .read(panoramaRepositoryProvider)
@@ -506,6 +519,14 @@ class _Actions extends ConsumerWidget {
   Future<void> _confirmSale(BuildContext context, WidgetRef ref) async {
     final admin = ref.read(currentUserProvider);
     if (admin == null) return;
+    final ok = await confirmDialog(
+      context,
+      title: 'Подтвердить продажу',
+      message: 'Кв. №${unit.number} будет отмечена проданной. '
+          'Действие необратимо.',
+      confirmLabel: 'Подтвердить',
+    );
+    if (!ok || !context.mounted) return;
     final messenger = ScaffoldMessenger.of(context);
     await ref
         .read(panoramaRepositoryProvider)

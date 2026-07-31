@@ -9,6 +9,7 @@ import '../../../core/models/user_role.dart';
 import '../../../core/providers/data_providers.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../shared/widgets/app_header.dart';
+import '../../../shared/widgets/confirm_dialog.dart';
 import '../../../shared/widgets/initials_avatar.dart';
 
 /// Управление учётными записями (FR-01): создание, роли, блокировка.
@@ -39,7 +40,7 @@ class UsersScreen extends ConsumerWidget {
                   for (final user in users)
                     _UserCard(
                       user: user,
-                      onBlock: () => _toggleBlock(ref, user),
+                      onBlock: () => _toggleBlock(context, ref, user),
                       onRole: () => _toggleRole(ref, user),
                     ),
                 ],
@@ -51,7 +52,21 @@ class UsersScreen extends ConsumerWidget {
     );
   }
 
-  Future<void> _toggleBlock(WidgetRef ref, ManagerModel user) async {
+  Future<void> _toggleBlock(
+    BuildContext context,
+    WidgetRef ref,
+    ManagerModel user,
+  ) async {
+    if (!user.blocked) {
+      final ok = await confirmDialog(
+        context,
+        title: 'Заблокировать',
+        message: '${user.name} потеряет доступ, все сессии будут завершены.',
+        confirmLabel: 'Заблокировать',
+        danger: true,
+      );
+      if (!ok) return;
+    }
     await ref
         .read(panoramaRepositoryProvider)
         .setUserBlocked(userId: user.id, blocked: !user.blocked);

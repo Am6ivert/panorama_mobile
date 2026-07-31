@@ -84,14 +84,28 @@ class _BoardScreenState extends ConsumerState<BoardScreen> {
                 subtitle: '${complex.address} · ${complex.deadline}',
                 gradient: false,
                 onBack: () => Navigator.of(context).pop(),
-                trailing: _ViewToggle(
-                  listView: _listView,
-                  onChanged: (v) => setState(() => _listView = v),
-                ),
+                trailing: blockNames.isEmpty
+                    ? null
+                    : _ViewToggle(
+                        listView: _listView,
+                        onChanged: (v) => setState(() => _listView = v),
+                      ),
                 bottom: LiveIndicator(
                   text: 'Обновлено в ${TimeFormat.hhmm(_updatedAt)}',
                 ),
               ),
+              if (blockNames.isEmpty)
+                Expanded(
+                  child: EmptyState(
+                    icon: Icons.domain_add_outlined,
+                    text: ref.watch(isAdminProvider)
+                        ? 'В объекте пока нет блоков и квартир.\n'
+                              'Добавьте их через «Мастер массового создания» '
+                              'в админ-панели.'
+                        : 'В объекте пока нет квартир.',
+                  ),
+                )
+              else ...[
               _FilterPanel(
                 blockNames: blockNames,
                 block: block,
@@ -123,6 +137,7 @@ class _BoardScreenState extends ConsumerState<BoardScreen> {
                       )
                     : _Grid(units: units, screen: this),
               ),
+              ],
             ],
           );
         },
