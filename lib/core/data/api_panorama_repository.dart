@@ -36,7 +36,11 @@ class ApiPanoramaRepository implements PanoramaRepository {
         '/auth/login',
         body: {'login': login, 'password': password},
       );
+      final token = res['token'] as String?;
+      if (token != null) _api.setToken(token);
       return LoginOk(ManagerModel.fromJson(res['user'] as Map<String, dynamic>));
+    } on ApiException catch (e) {
+      return LoginFailed(e.message);
     } catch (e) {
       return LoginFailed('$e');
     }
@@ -158,14 +162,17 @@ class ApiPanoramaRepository implements PanoramaRepository {
   );
 
   @override
-  Future<List<DealModel>> fetchDeals() async => const [];
+  Future<List<DealModel>> fetchDeals() async =>
+      (await _api.getList('/deals')).map(DealModel.fromJson).toList();
 
   @override
   Future<DealModel> setDealStage({
     required String dealId,
     required DealStage stage,
     required ManagerModel by,
-  }) => throw UnimplementedError();
+  }) async => DealModel.fromJson(
+    await _api.post('/deals/$dealId/stage', body: {'stage': stage.wire}),
+  );
 
   @override
   Future<List<UnitModel>> fetchUnits() async =>
@@ -177,16 +184,24 @@ class ApiPanoramaRepository implements PanoramaRepository {
     yield* Stream.periodic(_pollInterval).asyncMap((_) => fetchUnits());
   }
 
+  /// Превращает 422-ответ сервера в [LimitExceeded] (FR-07.9).
+  Future<UnitModel> _unitAction(String path, Map<String, dynamic> body) async {
+    try {
+      return UnitModel.fromJson(await _api.post(path, body: body));
+    } on ApiException catch (e) {
+      if (e.statusCode == 422) throw LimitExceeded(e.message);
+      rethrow;
+    }
+  }
+
   @override
   Future<UnitModel> takeToWork({
     required String unitId,
     required ManagerModel manager,
     ClientModel? client,
-  }) async => UnitModel.fromJson(
-    await _api.post(
-      '/units/$unitId/take',
-      body: {'manager_id': manager.id, 'client_id': client?.id},
-    ),
+  }) => _unitAction(
+    '/units/$unitId/take',
+    {'manager_id': manager.id, 'client_id': client?.id},
   );
 
   @override
@@ -194,11 +209,9 @@ class ApiPanoramaRepository implements PanoramaRepository {
     required String unitId,
     required ManagerModel manager,
     ClientModel? client,
-  }) async => UnitModel.fromJson(
-    await _api.post(
-      '/units/$unitId/book',
-      body: {'manager_id': manager.id, 'client_id': client?.id},
-    ),
+  }) => _unitAction(
+    '/units/$unitId/book',
+    {'manager_id': manager.id, 'client_id': client?.id},
   );
 
   @override
@@ -248,18 +261,26 @@ class ApiPanoramaRepository implements PanoramaRepository {
 
   @override
   Future<List<AppNotification>> fetchNotifications(String userId) async =>
-      const [];
+      (await _api.getList('/notifications?user_id=$userId'))
+          .map(AppNotification.fromJson)
+          .toList();
 
   @override
   Stream<List<AppNotification>> watchNotifications(String userId) async* {
-    yield const [];
+    yield await fetchNotifications(userId);
+    yield* Stream.periodic(_pollInterval)
+        .asyncMap((_) => fetchNotifications(userId));
   }
 
   @override
-  Future<void> markNotificationRead(String notificationId) async {}
+  Future<void> markNotificationRead(String notificationId) async {
+    await _api.post('/notifications/$notificationId/read');
+  }
 
   @override
-  Future<void> markAllNotificationsRead(String userId) async {}
+  Future<void> markAllNotificationsRead(String userId) async {
+    await _api.post('/notifications/read-all', body: {'user_id': userId});
+  }
 
   @override
   Future<void> messageHolder({
@@ -270,7 +291,8 @@ class ApiPanoramaRepository implements PanoramaRepository {
   }
 
   @override
-  Future<List<AuditLog>> fetchAuditLogs() async => const [];
+  Future<List<AuditLog>> fetchAuditLogs() async =>
+      (await _api.getList('/audit')).map(AuditLog.fromJson).toList();
 
   @override
   void dispose() {}

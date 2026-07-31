@@ -1,9 +1,15 @@
 abstract final class AppConfig {
-  /// Пока данные берутся из [MockPanoramaRepository].
-  /// Когда Panorama отдаст свой API — поставить false и заполнить [apiBaseUrl].
-  static const useMockData = true;
+  /// Источник данных. По умолчанию — реальный backend (PostgreSQL через REST).
+  /// Для автономного запуска без сервера:
+  ///   flutter run --dart-define=USE_MOCK=true
+  static const useMockData = bool.fromEnvironment('USE_MOCK');
 
-  static const apiBaseUrl = 'https://api.panorama.kg/v1';
+  /// Адрес backend'а (по умолчанию — локальный сервер из backend/).
+  /// Android-эмулятор: --dart-define=API_BASE_URL=http://10.0.2.2:8080/api/v1
+  static const apiBaseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'http://localhost:8080/api/v1',
+  );
 
   /// Часовой пояс отображения (ТЗ 5.4). Метки в БД — UTC.
   static const displayTimeZone = 'Asia/Bishkek';

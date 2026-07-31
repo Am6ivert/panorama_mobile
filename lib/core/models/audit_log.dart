@@ -23,4 +23,13 @@ class AuditLog {
 
   /// Значения до/после или дополнительный контекст.
   final String details;
+
+  factory AuditLog.fromJson(Map<String, dynamic> json) => AuditLog(
+    id: json['id'] as String,
+    at: DateTime.parse(json['at'] as String),
+    userName: json['user_name'] as String? ?? '',
+    action: json['action'] as String? ?? '',
+    entity: json['entity'] as String? ?? '',
+    details: json['details'] as String? ?? '',
+  );
 }

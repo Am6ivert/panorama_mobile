@@ -421,7 +421,7 @@ class Api {
     final actor = await _actor(b['manager_id'] as String?);
     if (actor == null) return jsonError(404, 'Пользователь не найден');
     if (!actor.isAdmin && await _heldCount(b['manager_id'] as String, 'work') >= 5) {
-      return jsonError(409, 'Достигнут лимит: квартир в работе — 5. Освободите одну.');
+      return jsonError(422, 'Достигнут лимит: квартир в работе — 5. Освободите одну.');
     }
     return _apply(
       id,
@@ -439,7 +439,7 @@ class Api {
     final actor = await _actor(b['manager_id'] as String?);
     if (actor == null) return jsonError(404, 'Пользователь не найден');
     if (!actor.isAdmin && await _heldCount(b['manager_id'] as String, 'hold') >= 5) {
-      return jsonError(409, 'Достигнут лимит: активных броней — 5. Снимите одну.');
+      return jsonError(422, 'Достигнут лимит: активных броней — 5. Снимите одну.');
     }
     final res = await _apply(
       id,

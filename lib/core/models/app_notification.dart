@@ -61,6 +61,18 @@ class AppNotification {
   final String? unitId;
   final bool read;
 
+  factory AppNotification.fromJson(Map<String, dynamic> json) =>
+      AppNotification(
+        id: json['id'] as String,
+        kind: NotificationKind.fromWire(json['kind'] as String?),
+        title: json['title'] as String? ?? '',
+        body: json['body'] as String? ?? '',
+        at: DateTime.parse(json['at'] as String),
+        recipientId: json['recipient_id'] as String? ?? '',
+        unitId: json['unit_id'] as String?,
+        read: json['read'] as bool? ?? false,
+      );
+
   AppNotification copyWith({bool? read}) => AppNotification(
     id: id,
     kind: kind,

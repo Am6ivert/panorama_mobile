@@ -34,6 +34,21 @@ class DealModel {
   bool get actionOverdue =>
       nextActionAt != null && nextActionAt!.isBefore(DateTime.now());
 
+  factory DealModel.fromJson(Map<String, dynamic> json) => DealModel(
+    id: json['id'] as String,
+    clientId: json['client_id'] as String? ?? '',
+    clientName: json['client_name'] as String? ?? '',
+    unitId: json['unit_id'] as String? ?? '',
+    unitLabel: json['unit_label'] as String? ?? '',
+    sellerId: json['seller_id'] as String? ?? '',
+    sellerName: json['seller_name'] as String? ?? '',
+    stage: DealStage.fromWire(json['stage'] as String?),
+    createdAt: DateTime.parse(json['created_at'] as String),
+    nextActionAt: json['next_action_at'] == null
+        ? null
+        : DateTime.parse(json['next_action_at'] as String),
+  );
+
   DealModel copyWith({DealStage? stage, DateTime? nextActionAt}) => DealModel(
     id: id,
     clientId: clientId,
