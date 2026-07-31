@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/constants/app_colors.dart';
+import '../../../core/models/app_notification.dart';
+import '../../../core/notifications/notification_service.dart';
 import '../../../core/providers/data_providers.dart';
 import '../../../core/providers/ui_providers.dart';
 import '../../clients/screens/clients_screen.dart';
@@ -10,9 +12,14 @@ import '../../dashboard/screens/dashboard_screen.dart';
 import '../../notifications/screens/notifications_screen.dart';
 import '../../registry/screens/registry_screen.dart';
 
-class HomeShell extends ConsumerWidget {
+class HomeShell extends ConsumerStatefulWidget {
   const HomeShell({super.key});
 
+  @override
+  ConsumerState<HomeShell> createState() => _HomeShellState();
+}
+
+class _HomeShellState extends ConsumerState<HomeShell> {
   static const _tabs = [
     DashboardScreen(),
     ComplexesScreen(),
@@ -21,8 +28,37 @@ class HomeShell extends ConsumerWidget {
     NotificationsScreen(),
   ];
 
+  late final NotificationService _push = ref.read(notificationServiceProvider);
+  final _seen = <String>{};
+  bool _firstBatch = true;
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  void initState() {
+    super.initState();
+    _push.init();
+  }
+
+  /// Показывает системное/браузерное уведомление о новых непрочитанных.
+  void _surfaceNew(List<AppNotification> list) {
+    if (_firstBatch) {
+      _seen.addAll(list.map((n) => n.id)); // при входе не спамим старыми
+      _firstBatch = false;
+      return;
+    }
+    for (final n in list) {
+      if (!n.read && _seen.add(n.id)) {
+        _push.show(title: n.title, body: n.body);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    ref.listen(notificationsProvider, (_, next) {
+      final list = next.value;
+      if (list != null) _surfaceNew(list);
+    });
+
     final index = ref.watch(shellTabProvider);
     final unread = ref.watch(unreadCountProvider);
 

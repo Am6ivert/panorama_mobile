@@ -14,8 +14,15 @@ import '../models/unit_model.dart';
 import '../models/unit_status.dart';
 import '../models/user_role.dart';
 import '../network/api_client.dart';
+import '../notifications/notification_service.dart';
 
 final apiClientProvider = Provider<ApiClient>((ref) => ApiClient());
+
+/// Сервис системных/браузерных уведомлений (push уровня ОС, пока приложение
+/// открыто). Создаётся один раз на приложение.
+final notificationServiceProvider = Provider<NotificationService>(
+  (ref) => createNotificationService(),
+);
 
 final panoramaRepositoryProvider = Provider<PanoramaRepository>((ref) {
   final repository = AppConfig.useMockData
