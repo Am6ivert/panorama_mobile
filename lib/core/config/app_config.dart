@@ -20,9 +20,6 @@ abstract final class AppConfig {
   /// Лимит квартир «в работе» (на показе) на менеджера одновременно.
   static const workLimitPerManager = 5;
 
-  /// Лимит квартир «на оформлении» на менеджера одновременно.
-  static const designLimitPerManager = 5;
-
   /// За сколько до истечения брони считаем её «истекающей» (FR-09.9, FR-11.2).
   static const bookingExpiryWarning = Duration(hours: 24);
 
