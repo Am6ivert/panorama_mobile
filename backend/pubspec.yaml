@@ -1,0 +1,15 @@
+name: panorama_backend
+description: REST API (/api/v1) для «Шахматки квартир» поверх PostgreSQL.
+publish_to: 'none'
+version: 1.0.0
+
+environment:
+  sdk: ^3.5.0
+
+dependencies:
+  shelf: ^1.4.1
+  shelf_router: ^1.1.4
+  postgres: ^3.5.0
+
+dev_dependencies:
+  lints: ^4.0.0
