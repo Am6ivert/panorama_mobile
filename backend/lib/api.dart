@@ -1,15 +1,18 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:shelf/shelf.dart';
 import 'package:shelf_router/shelf_router.dart';
 
 import 'db.dart';
+import 'fcm.dart';
 import 'json.dart';
 
 /// REST API /api/v1 для «Шахматки квартир».
 class Api {
-  Api(this.db);
+  Api(this.db, [this.fcm]);
   final Db db;
+  final Fcm? fcm;
   final _rnd = Random.secure();
 
   Handler get handler {
@@ -55,6 +58,9 @@ class Api {
     r.post('/api/v1/notifications/<id>/read', _markRead);
     r.post('/api/v1/notifications/read-all', _markAllRead);
     r.get('/api/v1/audit', _audit);
+
+    // --- Push-токены устройств ---
+    r.post('/api/v1/devices', _registerDevice);
 
     return r.call;
   }
@@ -559,10 +565,18 @@ class Api {
       {'id': id},
     );
     if (from != null && unit?['h'] != null) {
+      final body = '${from.name} спрашивает по квартире';
       await db.query(
         '''INSERT INTO notifications (recipient_id, kind, title, body, apartment_id)
            VALUES (@r, 'message', 'Сообщение по квартире', @body, @id)''',
-        {'r': unit!['h'], 'body': '${from.name} спрашивает по квартире', 'id': id},
+        {'r': unit!['h'], 'body': body, 'id': id},
+      );
+      await _pushFcm(
+        'SELECT push_token AS t FROM devices WHERE user_id=@u',
+        {'u': unit['h']},
+        title: 'Сообщение по квартире',
+        body: body,
+        unitId: id,
       );
     }
     return jsonOk({});
@@ -676,13 +690,51 @@ class Api {
     String kind,
     String title,
     String body,
-  ) =>
-      db.query(
-        '''INSERT INTO notifications (recipient_id, kind, title, body, apartment_id)
-           SELECT id, @kind, @title, @body, @apt
-           FROM users WHERE id <> @actor AND blocked=false AND deleted_at IS NULL''',
-        {'actor': actorId, 'kind': kind, 'title': title, 'body': body, 'apt': unitId},
-      );
+  ) async {
+    await db.query(
+      '''INSERT INTO notifications (recipient_id, kind, title, body, apartment_id)
+         SELECT id, @kind, @title, @body, @apt
+         FROM users WHERE id <> @actor AND blocked=false AND deleted_at IS NULL''',
+      {'actor': actorId, 'kind': kind, 'title': title, 'body': body, 'apt': unitId},
+    );
+    await _pushFcm(
+      '''SELECT d.push_token AS t FROM devices d JOIN users u ON u.id=d.user_id
+         WHERE u.id <> @actor AND u.blocked=false AND u.deleted_at IS NULL''',
+      {'actor': actorId},
+      title: title,
+      body: body,
+      unitId: unitId,
+    );
+  }
+
+  /// Отправляет push на токены устройств, выбранные [tokenSql] (не блокирует
+  /// ответ API). Если FCM не подключён — тихо пропускает.
+  Future<void> _pushFcm(
+    String tokenSql,
+    Map<String, dynamic> params, {
+    required String title,
+    required String body,
+    String? unitId,
+  }) async {
+    if (fcm == null) return;
+    final tokens = (await db.query(tokenSql, params))
+        .map((r) => r['t'] as String)
+        .toList();
+    if (tokens.isNotEmpty) {
+      unawaited(fcm!.sendToTokens(tokens, title: title, body: body, unitId: unitId));
+    }
+  }
+
+  Future<Response> _registerDevice(Request request) async {
+    final b = await readJson(request);
+    await db.query(
+      '''INSERT INTO devices (user_id, platform, push_token)
+         VALUES (@u, @p, @t)
+         ON CONFLICT (push_token) DO UPDATE SET user_id=@u, updated_at=now()''',
+      {'u': b['user_id'], 'p': b['platform'], 't': b['token']},
+    );
+    return jsonOk({'ok': true});
+  }
 
   // ===========================================================================
   // Сделки, уведомления, аудит

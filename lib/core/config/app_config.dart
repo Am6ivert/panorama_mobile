@@ -33,4 +33,9 @@ abstract final class AppConfig {
   /// уходит на сервер (хеш Argon2id/bcrypt), это значение перестаёт
   /// использоваться.
   static const defaultPassword = '0000';
+
+  /// VAPID key для web-push (Firebase → Cloud Messaging → Web Push certificates).
+  /// Нужен только для получения FCM-токена в браузере. Можно передать через
+  /// --dart-define=FCM_VAPID_KEY=... Заполняется владельцем проекта.
+  static const fcmVapidKey = String.fromEnvironment('FCM_VAPID_KEY');
 }

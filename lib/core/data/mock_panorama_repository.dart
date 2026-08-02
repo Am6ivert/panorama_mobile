@@ -845,6 +845,15 @@ class MockPanoramaRepository implements PanoramaRepository {
       .toList(growable: false)
     ..sort((a, b) => b.at.compareTo(a.at));
 
+  @override
+  Future<void> registerDevice({
+    required String userId,
+    required String token,
+    required String platform,
+  }) async {
+    // На моке push-токены не нужны — уведомления показываются в приложении.
+  }
+
   // ===========================================================================
   // Аудит
   // ===========================================================================

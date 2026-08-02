@@ -2,12 +2,14 @@ import 'dart:io';
 
 import 'package:panorama_backend/api.dart';
 import 'package:panorama_backend/db.dart';
+import 'package:panorama_backend/fcm.dart';
 import 'package:shelf/shelf.dart';
 import 'package:shelf/shelf_io.dart' as io;
 
 Future<void> main() async {
   final db = await Db.open();
-  final api = Api(db);
+  final fcm = await Fcm.tryLoad();
+  final api = Api(db, fcm);
 
   final handler = const Pipeline()
       .addMiddleware(_cors())

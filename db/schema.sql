@@ -67,7 +67,7 @@ CREATE INDEX sessions_user_idx ON sessions (user_id) WHERE revoked_at IS NULL;
 CREATE TABLE devices (
     id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id     uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
-    platform    text NOT NULL CHECK (platform IN ('ios', 'android')),
+    platform    text NOT NULL CHECK (platform IN ('ios', 'android', 'web')),
     push_token  text NOT NULL,               -- FCM / APNs
     created_at  timestamptz NOT NULL DEFAULT now(),
     updated_at  timestamptz NOT NULL DEFAULT now()

@@ -2,3 +2,6 @@
 .packages
 build/
 pubspec.lock
+
+# Секрет Firebase — НЕ коммитить
+service-account.json

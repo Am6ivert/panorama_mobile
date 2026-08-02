@@ -291,6 +291,18 @@ class ApiPanoramaRepository implements PanoramaRepository {
   }
 
   @override
+  Future<void> registerDevice({
+    required String userId,
+    required String token,
+    required String platform,
+  }) async {
+    await _api.post(
+      '/devices',
+      body: {'user_id': userId, 'token': token, 'platform': platform},
+    );
+  }
+
+  @override
   Future<List<AuditLog>> fetchAuditLogs() async =>
       (await _api.getList('/audit')).map(AuditLog.fromJson).toList();
 

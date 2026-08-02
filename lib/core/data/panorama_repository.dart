@@ -218,6 +218,13 @@ abstract interface class PanoramaRepository {
     required ManagerModel from,
   });
 
+  /// Регистрация push-токена устройства (FCM/APNs) для доставки уведомлений.
+  Future<void> registerDevice({
+    required String userId,
+    required String token,
+    required String platform,
+  });
+
   // --- Аудит (FR-12) ---
 
   Future<List<AuditLog>> fetchAuditLogs();
