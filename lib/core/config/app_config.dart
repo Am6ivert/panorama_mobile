@@ -35,7 +35,11 @@ abstract final class AppConfig {
   static const defaultPassword = '0000';
 
   /// VAPID key для web-push (Firebase → Cloud Messaging → Web Push certificates).
-  /// Нужен только для получения FCM-токена в браузере. Можно передать через
-  /// --dart-define=FCM_VAPID_KEY=... Заполняется владельцем проекта.
-  static const fcmVapidKey = String.fromEnvironment('FCM_VAPID_KEY');
+  /// Публичный ключ проекта panorama-kg. При необходимости переопределяется
+  /// через --dart-define=FCM_VAPID_KEY=...
+  static const fcmVapidKey = String.fromEnvironment(
+    'FCM_VAPID_KEY',
+    defaultValue:
+        'BGdZfFOVB4L0nfKoeev0uJ5isWc9rdGSuqkOkahmEgMxBclTJe2sMMH6thcd6z8FteueIr5qfeNsrF2soQMlcpQ',
+  );
 }
