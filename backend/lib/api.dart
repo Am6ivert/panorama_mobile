@@ -482,11 +482,11 @@ class Api {
     return res;
   }
 
-  Future<Response> _design(Request request, String id) async {
+    Future<Response> _design(Request request, String id) async {
     final b = await readJson(request);
     final actor = await _actor(b['manager_id'] as String?);
     if (actor == null) return jsonError(404, 'Пользователь не найден');
-    return _apply(
+    final res = await _apply(
       id,
       toStatus: 'design',
       from: const ['hold'],
@@ -494,6 +494,18 @@ class Api {
       keepHolder: true,
       title: 'Отправлена на оформление',
     );
+    // FR-11.5: отправлена на оформление → администратор.
+    if (res.statusCode == 200) {
+      final label = await _unitLabel(id);
+      await _notifyUsers(
+        await _adminIds(),
+        'design',
+        'Квартира на оформление',
+        '$label — ${actor.name}',
+        id,
+      );
+    }
+    return res;
   }
 
   Future<Response> _sell(Request request, String id) async {
@@ -825,5 +837,110 @@ class Api {
   String _token() {
     final bytes = List<int>.generate(24, (_) => _rnd.nextInt(256));
     return bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+  }
+
+  // ===========================================================================
+  // Адресные уведомления + проверка истечения броней (FR-11.2/11.3/11.4/11.5)
+  // ===========================================================================
+
+  // Кого уже предупреждали об истечении (apartmentId -> held_until).
+  final _warned = <String, String>{};
+
+  Future<List<String>> _adminIds() async =>
+      (await db.query("SELECT user_id::text AS id FROM user_roles WHERE role_code='admin'"))
+          .map((r) => r['id'] as String)
+          .toList();
+
+  Future<String> _unitLabel(String id) async {
+    final r = await db.one(
+      '''SELECT (c.name || ' · ' || b.name || ' · №' || a.number::text) AS label
+         FROM apartments a JOIN complexes c ON c.id=a.complex_id
+         JOIN blocks b ON b.id=a.block_id WHERE a.id=@id''',
+      {'id': id},
+    );
+    return r?['label'] as String? ?? 'Квартира';
+  }
+
+  /// Вставляет уведомление конкретным пользователям и шлёт им push.
+  Future<void> _notifyUsers(
+    List<String> userIds,
+    String kind,
+    String title,
+    String body,
+    String? unitId,
+  ) async {
+    if (userIds.isEmpty) return;
+    await db.query(
+      '''INSERT INTO notifications (recipient_id, kind, title, body, apartment_id)
+         SELECT id, @kind, @title, @body, @apt
+         FROM users WHERE id = ANY(@ids) AND deleted_at IS NULL''',
+      {'kind': kind, 'title': title, 'body': body, 'apt': unitId, 'ids': userIds},
+    );
+    await _pushFcm(
+      'SELECT push_token AS t FROM devices WHERE user_id = ANY(@ids)',
+      {'ids': userIds},
+      title: title,
+      body: body,
+      unitId: unitId,
+    );
+  }
+
+  /// Периодическая проверка броней (FR-11.2, FR-11.3, FR-11.4). Зовётся раз в
+  /// минуту из server.dart.
+  Future<void> runExpiryChecks() async {
+    // 1) Истёкшие брони — снять и уведомить.
+    final expired = await db.query(
+      '''SELECT a.id::text AS id, a.held_by_id::text AS holder,
+                (c.name || ' · ' || b.name || ' · №' || a.number::text) AS label
+         FROM apartments a JOIN complexes c ON c.id=a.complex_id
+         JOIN blocks b ON b.id=a.block_id
+         WHERE a.status='hold' AND a.held_until < now() AND a.deleted_at IS NULL''',
+    );
+    for (final u in expired) {
+      final id = u['id'] as String;
+      final holder = u['holder'] as String?;
+      final label = u['label'] as String;
+      await db.query(
+        '''UPDATE apartments SET status='free', held_by_id=NULL, held_until=NULL,
+               client_id=NULL, updated_at=now(), version=version+1 WHERE id=@id''',
+        {'id': id},
+      );
+      await db.query(
+        '''INSERT INTO apartment_status_history (apartment_id, to_status, comment)
+           VALUES (@id, 'free', 'Бронь снята автоматически по истечении срока')''',
+        {'id': id},
+      );
+      if (holder != null) {
+        await _notifyUsers([holder], 'expiring', 'Ваша бронь истекла',
+            '$label — бронь снята автоматически', id); // FR-11.3
+      }
+      await _notifyTeam(holder ?? '', id, 'released', 'Квартира освободилась',
+          '$label снова свободна'); // FR-11.4
+      _warned.remove(id);
+    }
+
+    // 2) Брони, истекающие в ближайшие 24 часа — предупредить один раз (FR-11.2).
+    final soon = await db.query(
+      '''SELECT a.id::text AS id, a.held_by_id::text AS holder,
+                to_char(a.held_until,'YYYY-MM-DD"T"HH24:MI:SS') AS until,
+                (c.name || ' · ' || b.name || ' · №' || a.number::text) AS label
+         FROM apartments a JOIN complexes c ON c.id=a.complex_id
+         JOIN blocks b ON b.id=a.block_id
+         WHERE a.status='hold' AND a.held_until > now()
+               AND a.held_until < now() + interval '24 hours'
+               AND a.deleted_at IS NULL''',
+    );
+    final admins = await _adminIds();
+    for (final u in soon) {
+      final id = u['id'] as String;
+      final until = u['until'] as String;
+      if (_warned[id] == until) continue;
+      _warned[id] = until;
+      final holder = u['holder'] as String?;
+      final label = u['label'] as String;
+      final recipients = <String>{if (holder != null) holder, ...admins}.toList();
+      await _notifyUsers(recipients, 'expiring', 'Бронь истекает',
+          '$label — осталось меньше 24 часов', id);
+    }
   }
 }
