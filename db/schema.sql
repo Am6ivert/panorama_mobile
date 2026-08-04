@@ -1,25 +1,25 @@
+﻿-- =============================================================================
+-- Panorama В«РЁР°С…РјР°С‚РєР° РєРІР°СЂС‚РёСЂВ» вЂ” СЃС…РµРјР° PostgreSQL 14+
 -- =============================================================================
--- Panorama «Шахматка квартир» — схема PostgreSQL 14+
--- =============================================================================
--- Соответствует ТЗ, раздел 4:
---   * все временные метки — timestamptz в UTC;
---   * ДЕНЕЖНЫХ КОЛОНОК НЕТ ни в одной таблице (ТЗ 1.3);
---   * мягкое удаление (deleted_at), внешние ключи ON DELETE RESTRICT;
---   * частичные уникальные индексы с условием deleted_at IS NULL;
---   * статусы — text + CHECK (тип ENUM не используется);
---   * отдельной таблицы этажей нет — этаж это атрибут квартиры.
--- Общие поля во всех прикладных таблицах:
+-- РЎРѕРѕС‚РІРµС‚СЃС‚РІСѓРµС‚ РўР—, СЂР°Р·РґРµР» 4:
+--   * РІСЃРµ РІСЂРµРјРµРЅРЅС‹Рµ РјРµС‚РєРё вЂ” timestamptz РІ UTC;
+--   * Р”Р•РќР•Р–РќР«РҐ РљРћР›РћРќРћРљ РќР•Рў РЅРё РІ РѕРґРЅРѕР№ С‚Р°Р±Р»РёС†Рµ (РўР— 1.3);
+--   * РјСЏРіРєРѕРµ СѓРґР°Р»РµРЅРёРµ (deleted_at), РІРЅРµС€РЅРёРµ РєР»СЋС‡Рё ON DELETE RESTRICT;
+--   * С‡Р°СЃС‚РёС‡РЅС‹Рµ СѓРЅРёРєР°Р»СЊРЅС‹Рµ РёРЅРґРµРєСЃС‹ СЃ СѓСЃР»РѕРІРёРµРј deleted_at IS NULL;
+--   * СЃС‚Р°С‚СѓСЃС‹ вЂ” text + CHECK (С‚РёРї ENUM РЅРµ РёСЃРїРѕР»СЊР·СѓРµС‚СЃСЏ);
+--   * РѕС‚РґРµР»СЊРЅРѕР№ С‚Р°Р±Р»РёС†С‹ СЌС‚Р°Р¶РµР№ РЅРµС‚ вЂ” СЌС‚Р°Р¶ СЌС‚Рѕ Р°С‚СЂРёР±СѓС‚ РєРІР°СЂС‚РёСЂС‹.
+-- РћР±С‰РёРµ РїРѕР»СЏ РІРѕ РІСЃРµС… РїСЂРёРєР»Р°РґРЅС‹С… С‚Р°Р±Р»РёС†Р°С…:
 --   id, created_at, updated_at, deleted_at, created_by, updated_by, version.
 -- =============================================================================
 
--- Требует расширения pgcrypto в этой БД (для crypt() в seed.sql). Его создаёт
--- суперпользователь через db/init.sql — до запуска этого файла.
--- gen_random_uuid() встроена в PostgreSQL 13+ и расширения не требует.
+-- РўСЂРµР±СѓРµС‚ СЂР°СЃС€РёСЂРµРЅРёСЏ pgcrypto РІ СЌС‚РѕР№ Р‘Р” (РґР»СЏ crypt() РІ seed.sql). Р•РіРѕ СЃРѕР·РґР°С‘С‚
+-- СЃСѓРїРµСЂРїРѕР»СЊР·РѕРІР°С‚РµР»СЊ С‡РµСЂРµР· db/init.sql вЂ” РґРѕ Р·Р°РїСѓСЃРєР° СЌС‚РѕРіРѕ С„Р°Р№Р»Р°.
+-- gen_random_uuid() РІСЃС‚СЂРѕРµРЅР° РІ PostgreSQL 13+ Рё СЂР°СЃС€РёСЂРµРЅРёСЏ РЅРµ С‚СЂРµР±СѓРµС‚.
 
 BEGIN;
 
 -- =============================================================================
--- 1. Пользователи и доступ
+-- 1. РџРѕР»СЊР·РѕРІР°С‚РµР»Рё Рё РґРѕСЃС‚СѓРї
 -- =============================================================================
 
 CREATE TABLE roles (
@@ -32,7 +32,7 @@ CREATE TABLE users (
     full_name             text NOT NULL,
     login                 text NOT NULL,
     phone                 text NOT NULL,
-    password_hash         text NOT NULL,             -- Argon2id/bcrypt, только хеш
+    password_hash         text NOT NULL,             -- Argon2id/bcrypt, С‚РѕР»СЊРєРѕ С…РµС€
     must_change_password  boolean NOT NULL DEFAULT true,
     blocked               boolean NOT NULL DEFAULT false,
     created_at            timestamptz NOT NULL DEFAULT now(),
@@ -43,7 +43,7 @@ CREATE TABLE users (
     version               integer NOT NULL DEFAULT 1
 );
 
--- Логин и телефон уникальны среди «живых» записей (мягкое удаление не ломает).
+-- Р›РѕРіРёРЅ Рё С‚РµР»РµС„РѕРЅ СѓРЅРёРєР°Р»СЊРЅС‹ СЃСЂРµРґРё В«Р¶РёРІС‹С…В» Р·Р°РїРёСЃРµР№ (РјСЏРіРєРѕРµ СѓРґР°Р»РµРЅРёРµ РЅРµ Р»РѕРјР°РµС‚).
 CREATE UNIQUE INDEX users_login_uniq ON users (lower(login)) WHERE deleted_at IS NULL;
 CREATE UNIQUE INDEX users_phone_uniq ON users (phone)        WHERE deleted_at IS NULL;
 
@@ -75,16 +75,16 @@ CREATE TABLE devices (
 CREATE UNIQUE INDEX devices_token_uniq ON devices (push_token);
 
 -- =============================================================================
--- 2. Недвижимость: Объект → Блок → Квартира
+-- 2. РќРµРґРІРёР¶РёРјРѕСЃС‚СЊ: РћР±СЉРµРєС‚ в†’ Р‘Р»РѕРє в†’ РљРІР°СЂС‚РёСЂР°
 -- =============================================================================
 
 CREATE TABLE complexes (
     id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     name        text NOT NULL,
     address     text NOT NULL,
-    deadline    text,                         -- «сдача 2 кв. 2027» / «сдан»
-    segment     text,                         -- бизнес / комфорт / премиум
-    cover_start integer,                       -- цвет градиента-обложки (ARGB)
+    deadline    text,                         -- В«СЃРґР°С‡Р° 2 РєРІ. 2027В» / В«СЃРґР°РЅВ»
+    segment     text,                         -- Р±РёР·РЅРµСЃ / РєРѕРјС„РѕСЂС‚ / РїСЂРµРјРёСѓРј
+    cover_start integer,                       -- С†РІРµС‚ РіСЂР°РґРёРµРЅС‚Р°-РѕР±Р»РѕР¶РєРё (ARGB)
     cover_end   integer,
     created_at  timestamptz NOT NULL DEFAULT now(),
     updated_at  timestamptz NOT NULL DEFAULT now(),
@@ -115,14 +115,14 @@ CREATE TABLE clients (
     full_name       text NOT NULL,
     phone           text NOT NULL,
     seller_id       uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
-    rooms           integer,                   -- сколько комнат ищет (0 — студия)
-    source          text,                      -- источник обращения
-    request         text,                      -- текстовый запрос (без бюджета!)
+    rooms           integer,                   -- СЃРєРѕР»СЊРєРѕ РєРѕРјРЅР°С‚ РёС‰РµС‚ (0 вЂ” СЃС‚СѓРґРёСЏ)
+    source          text,                      -- РёСЃС‚РѕС‡РЅРёРє РѕР±СЂР°С‰РµРЅРёСЏ
+    request         text,                      -- С‚РµРєСЃС‚РѕРІС‹Р№ Р·Р°РїСЂРѕСЃ (Р±РµР· Р±СЋРґР¶РµС‚Р°!)
     stage           text NOT NULL DEFAULT 'show'
                         CHECK (stage IN ('show','negotiation','booking',
                                          'design','done','rejected')),
     note            text,
-    next_action_at  timestamptz,               -- дата следующего действия
+    next_action_at  timestamptz,               -- РґР°С‚Р° СЃР»РµРґСѓСЋС‰РµРіРѕ РґРµР№СЃС‚РІРёСЏ
     created_at      timestamptz NOT NULL DEFAULT now(),
     updated_at      timestamptz NOT NULL DEFAULT now(),
     deleted_at      timestamptz,
@@ -130,7 +130,7 @@ CREATE TABLE clients (
     updated_by      uuid REFERENCES users(id) ON DELETE RESTRICT,
     version         integer NOT NULL DEFAULT 1
 );
--- Проверка дубликата телефона в пределах менеджера (FR-07.3).
+-- РџСЂРѕРІРµСЂРєР° РґСѓР±Р»РёРєР°С‚Р° С‚РµР»РµС„РѕРЅР° РІ РїСЂРµРґРµР»Р°С… РјРµРЅРµРґР¶РµСЂР° (FR-07.3).
 CREATE UNIQUE INDEX clients_seller_phone_uniq
     ON clients (seller_id, phone) WHERE deleted_at IS NULL;
 CREATE INDEX clients_seller_idx ON clients (seller_id) WHERE deleted_at IS NULL;
@@ -139,11 +139,11 @@ CREATE TABLE apartments (
     id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     block_id     uuid NOT NULL REFERENCES blocks(id) ON DELETE RESTRICT,
     complex_id   uuid NOT NULL REFERENCES complexes(id) ON DELETE RESTRICT,
-    floor        integer NOT NULL CHECK (floor > 0),   -- этаж — атрибут квартиры
-    position     integer NOT NULL CHECK (position > 0),-- позиция на этаже (колонка)
-    number       integer NOT NULL,                     -- сквозной номер в блоке
-    rooms        integer NOT NULL,                     -- 0 — студия
-    area         numeric(6,1) NOT NULL,                -- площадь, м² (НЕ деньги)
+    floor        integer NOT NULL CHECK (floor > 0),   -- СЌС‚Р°Р¶ вЂ” Р°С‚СЂРёР±СѓС‚ РєРІР°СЂС‚РёСЂС‹
+    position     integer NOT NULL CHECK (position > 0),-- РїРѕР·РёС†РёСЏ РЅР° СЌС‚Р°Р¶Рµ (РєРѕР»РѕРЅРєР°)
+    number       integer NOT NULL,                     -- СЃРєРІРѕР·РЅРѕР№ РЅРѕРјРµСЂ РІ Р±Р»РѕРєРµ
+    rooms        integer NOT NULL,                     -- 0 вЂ” СЃС‚СѓРґРёСЏ
+    area         numeric(6,1) NOT NULL,                -- РїР»РѕС‰Р°РґСЊ, РјВІ (РќР• РґРµРЅСЊРіРё)
     status       text NOT NULL DEFAULT 'free'
                     CHECK (status IN ('free','work','hold',
                                       'design','sold','off_market')),
@@ -151,7 +151,7 @@ CREATE TABLE apartments (
     view         text,
     finish       text,
     bathrooms    integer NOT NULL DEFAULT 1,
-    -- текущий держатель (денормализация активной брони/показа для скорости)
+    -- С‚РµРєСѓС‰РёР№ РґРµСЂР¶Р°С‚РµР»СЊ (РґРµРЅРѕСЂРјР°Р»РёР·Р°С†РёСЏ Р°РєС‚РёРІРЅРѕР№ Р±СЂРѕРЅРё/РїРѕРєР°Р·Р° РґР»СЏ СЃРєРѕСЂРѕСЃС‚Рё)
     held_by_id   uuid REFERENCES users(id) ON DELETE RESTRICT,
     held_until   timestamptz,
     client_id    uuid REFERENCES clients(id) ON DELETE RESTRICT,
@@ -160,12 +160,12 @@ CREATE TABLE apartments (
     deleted_at   timestamptz,
     created_by   uuid REFERENCES users(id) ON DELETE RESTRICT,
     updated_by   uuid REFERENCES users(id) ON DELETE RESTRICT,
-    version      integer NOT NULL DEFAULT 1   -- оптимистичная блокировка (FR-06.4)
+    version      integer NOT NULL DEFAULT 1   -- РѕРїС‚РёРјРёСЃС‚РёС‡РЅР°СЏ Р±Р»РѕРєРёСЂРѕРІРєР° (FR-06.4)
 );
--- Уникальность номера квартиры в блоке (FR-02.4).
+-- РЈРЅРёРєР°Р»СЊРЅРѕСЃС‚СЊ РЅРѕРјРµСЂР° РєРІР°СЂС‚РёСЂС‹ РІ Р±Р»РѕРєРµ (FR-02.4).
 CREATE UNIQUE INDEX apartments_number_uniq
     ON apartments (block_id, number) WHERE deleted_at IS NULL;
--- Рабочие индексы (ТЗ 4).
+-- Р Р°Р±РѕС‡РёРµ РёРЅРґРµРєСЃС‹ (РўР— 4).
 CREATE INDEX apartments_grid_idx   ON apartments (block_id, floor, position);
 CREATE INDEX apartments_status_idx ON apartments (status);
 CREATE INDEX apartments_held_idx   ON apartments (held_by_id) WHERE held_by_id IS NOT NULL;
@@ -187,7 +187,7 @@ CREATE TABLE files (
     apartment_id  uuid REFERENCES apartments(id) ON DELETE RESTRICT,
     complex_id    uuid REFERENCES complexes(id) ON DELETE RESTRICT,
     kind          text NOT NULL CHECK (kind IN ('photo','plan','cover','doc')),
-    url           text NOT NULL,               -- S3-путь, выдаётся по подписанной ссылке
+    url           text NOT NULL,               -- S3-РїСѓС‚СЊ, РІС‹РґР°С‘С‚СЃСЏ РїРѕ РїРѕРґРїРёСЃР°РЅРЅРѕР№ СЃСЃС‹Р»РєРµ
     thumb_url     text,
     created_at    timestamptz NOT NULL DEFAULT now(),
     updated_at    timestamptz NOT NULL DEFAULT now(),
@@ -198,7 +198,7 @@ CREATE TABLE files (
 );
 
 -- =============================================================================
--- 3. Продажи: клиенты, сделки, брони
+-- 3. РџСЂРѕРґР°Р¶Рё: РєР»РёРµРЅС‚С‹, СЃРґРµР»РєРё, Р±СЂРѕРЅРё
 -- =============================================================================
 
 CREATE TABLE deals (
@@ -218,7 +218,7 @@ CREATE TABLE deals (
     version        integer NOT NULL DEFAULT 1
 );
 CREATE INDEX deals_seller_stage_idx ON deals (seller_id, stage) WHERE deleted_at IS NULL;
--- Не более одной активной сделки на квартиру (FR-08.4).
+-- РќРµ Р±РѕР»РµРµ РѕРґРЅРѕР№ Р°РєС‚РёРІРЅРѕР№ СЃРґРµР»РєРё РЅР° РєРІР°СЂС‚РёСЂСѓ (FR-08.4).
 CREATE UNIQUE INDEX deals_active_apartment_uniq
     ON deals (apartment_id)
     WHERE deleted_at IS NULL AND stage NOT IN ('done', 'rejected');
@@ -237,8 +237,8 @@ CREATE TABLE reservations (
     apartment_id   uuid NOT NULL REFERENCES apartments(id) ON DELETE RESTRICT,
     client_id      uuid NOT NULL REFERENCES clients(id) ON DELETE RESTRICT,
     manager_id     uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
-    expires_at     timestamptz NOT NULL,       -- срок брони (по умолчанию +3 дня)
-    released_at    timestamptz,                -- когда снята (авто/вручную)
+    expires_at     timestamptz NOT NULL,       -- СЃСЂРѕРє Р±СЂРѕРЅРё (РїРѕ СѓРјРѕР»С‡Р°РЅРёСЋ +3 РґРЅСЏ)
+    released_at    timestamptz,                -- РєРѕРіРґР° СЃРЅСЏС‚Р° (Р°РІС‚Рѕ/РІСЂСѓС‡РЅСѓСЋ)
     released_reason text CHECK (released_reason IN ('expired','manual','admin','sold')),
     created_at     timestamptz NOT NULL DEFAULT now(),
     updated_at     timestamptz NOT NULL DEFAULT now(),
@@ -248,14 +248,14 @@ CREATE TABLE reservations (
     version        integer NOT NULL DEFAULT 1
 );
 CREATE INDEX reservations_expires_idx ON reservations (expires_at) WHERE released_at IS NULL;
--- Второй рубеж защиты от двойного бронирования (ТЗ 4): максимум одна активная
--- бронь на квартиру.
+-- Р’С‚РѕСЂРѕР№ СЂСѓР±РµР¶ Р·Р°С‰РёС‚С‹ РѕС‚ РґРІРѕР№РЅРѕРіРѕ Р±СЂРѕРЅРёСЂРѕРІР°РЅРёСЏ (РўР— 4): РјР°РєСЃРёРјСѓРј РѕРґРЅР° Р°РєС‚РёРІРЅР°СЏ
+-- Р±СЂРѕРЅСЊ РЅР° РєРІР°СЂС‚РёСЂСѓ.
 CREATE UNIQUE INDEX reservations_active_uniq
     ON reservations (apartment_id)
     WHERE released_at IS NULL AND deleted_at IS NULL;
 
 -- =============================================================================
--- 4. Служебные
+-- 4. РЎР»СѓР¶РµР±РЅС‹Рµ
 -- =============================================================================
 
 CREATE TABLE notifications (
@@ -263,7 +263,7 @@ CREATE TABLE notifications (
     recipient_id  uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
     kind          text NOT NULL,               -- booked / expiring / released / ...
     title         text NOT NULL,
-    body          text NOT NULL,               -- без данных клиента (FR-11.10)
+    body          text NOT NULL,               -- Р±РµР· РґР°РЅРЅС‹С… РєР»РёРµРЅС‚Р° (FR-11.10)
     apartment_id  uuid REFERENCES apartments(id) ON DELETE RESTRICT,  -- deep link
     read_at       timestamptz,
     created_at    timestamptz NOT NULL DEFAULT now()
@@ -291,7 +291,7 @@ CREATE TABLE settings (
 
 CREATE TABLE bulk_operations (
     id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    idempotency_key  text NOT NULL,            -- повторная отправка не дублирует (FR-03.7)
+    idempotency_key  text NOT NULL,            -- РїРѕРІС‚РѕСЂРЅР°СЏ РѕС‚РїСЂР°РІРєР° РЅРµ РґСѓР±Р»РёСЂСѓРµС‚ (FR-03.7)
     complex_id       uuid REFERENCES complexes(id) ON DELETE RESTRICT,
     block_name       text,
     params           jsonb NOT NULL,
@@ -304,7 +304,7 @@ CREATE UNIQUE INDEX bulk_idempotency_uniq ON bulk_operations (idempotency_key);
 CREATE TABLE audit_logs (
     id           bigserial PRIMARY KEY,
     user_id      uuid REFERENCES users(id) ON DELETE RESTRICT,
-    action       text NOT NULL,               -- Вход / Бронь / Изменение статуса / ...
+    action       text NOT NULL,               -- Р’С…РѕРґ / Р‘СЂРѕРЅСЊ / РР·РјРµРЅРµРЅРёРµ СЃС‚Р°С‚СѓСЃР° / ...
     entity_type  text,
     entity_id    text,
     before       jsonb,
