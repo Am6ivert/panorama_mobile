@@ -37,11 +37,12 @@ class _AddClientSheetState extends ConsumerState<AddClientSheet> {
 
   final _formKey = GlobalKey<FormState>();
   final _name = TextEditingController();
-  final _phone = TextEditingController(text: '+996 ');
+  final _phone = TextEditingController();
   final _request = TextEditingController();
+  final _customRooms = TextEditingController();
 
-  int _rooms = 2;
-  String _source = _sources.first;
+  Set<int> _selectedRooms = {2};
+  String? _source;
   bool _saving = false;
 
   @override
@@ -49,6 +50,7 @@ class _AddClientSheetState extends ConsumerState<AddClientSheet> {
     _name.dispose();
     _phone.dispose();
     _request.dispose();
+    _customRooms.dispose();
     super.dispose();
   }
 
@@ -90,7 +92,7 @@ class _AddClientSheetState extends ConsumerState<AddClientSheet> {
               _Field(
                 controller: _phone,
                 label: 'Телефон',
-                hint: '+996 555 41-20-08',
+                hint: '0555 41-20-08',
                 keyboardType: TextInputType.phone,
                 inputFormatters: [
                   FilteringTextInputFormatter.allow(RegExp(r'[0-9+\-() ]')),
@@ -98,23 +100,44 @@ class _AddClientSheetState extends ConsumerState<AddClientSheet> {
                 validator: _validatePhone,
               ),
               const SizedBox(height: 18),
-              const Text('ЧТО ИЩЕТ', style: AppTextStyles.section),
+              const Text('ЧТО ИЩЕТ (можно выбрать несколько)', style: AppTextStyles.section),
               const SizedBox(height: 10),
-              ChoiceChipBar<int>(
-                padding: EdgeInsets.zero,
-                options: [
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
                   for (var i = 0; i < _roomLabels.length; i++)
-                    ChipOption(value: i, label: _roomLabels[i]),
+                    FilterChip(
+                      label: Text(_roomLabels[i]),
+                      selected: _selectedRooms.contains(i),
+                      onSelected: (selected) {
+                        setState(() {
+                          if (selected) {
+                            _selectedRooms.add(i);
+                          } else {
+                            _selectedRooms.remove(i);
+                          }
+                        });
+                      },
+                      selectedColor: AppColors.brand.withValues(alpha: 0.2),
+                      checkmarkColor: AppColors.brand,
+                    ),
                 ],
-                isSelected: (value) => value == _rooms,
-                onTap: (value) => setState(() => _rooms = value),
+              ),
+              const SizedBox(height: 10),
+              _Field(
+                controller: _customRooms,
+                label: 'Или укажите свой вариант',
+                hint: 'Например: пентхаус, таунхаус',
+                textCapitalization: TextCapitalization.sentences,
               ),
               const SizedBox(height: 18),
-              const Text('ИСТОЧНИК', style: AppTextStyles.section),
+              const Text('ИСТОЧНИК (необязательно)', style: AppTextStyles.section),
               const SizedBox(height: 10),
-              ChoiceChipBar<String>(
+              ChoiceChipBar<String?>(
                 padding: EdgeInsets.zero,
                 options: [
+                  ChipOption(value: null, label: 'Не указано'),
                   for (final s in _sources) ChipOption(value: s, label: s),
                 ],
                 isSelected: (value) => value == _source,
@@ -163,15 +186,26 @@ class _AddClientSheetState extends ConsumerState<AddClientSheet> {
     setState(() => _saving = true);
 
     try {
+      // Формируем строку запроса: выбранные комнаты + кастомный текст
+      final roomsText = _selectedRooms.isEmpty
+          ? ''
+          : _selectedRooms.map((i) => _roomLabels[i]).join(', ');
+      final custom = _customRooms.text.trim();
+      final requestText = [
+        if (roomsText.isNotEmpty) roomsText,
+        if (custom.isNotEmpty) custom,
+        if (_request.text.trim().isNotEmpty) _request.text.trim(),
+      ].join(' · ');
+
       final client = await ref
           .read(panoramaRepositoryProvider)
           .addClient(
             name: _name.text.trim(),
             phone: _phone.text.trim(),
             seller: seller,
-            rooms: _rooms,
-            source: _source,
-            request: _request.text.trim(),
+            rooms: _selectedRooms.isEmpty ? 0 : _selectedRooms.first,
+            source: _source ?? '',
+            request: requestText,
           );
       ref.invalidate(clientsProvider);
       if (mounted) Navigator.of(context).pop(client);

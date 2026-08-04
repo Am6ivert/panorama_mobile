@@ -299,15 +299,13 @@ class _Actions extends ConsumerWidget {
             onTap: () => _similar(context, ref),
           ),
         ]);
-        if (isAdmin) {
-          buttons.add(
-            _Button(
-              label: 'Снять с продажи',
-              outlined: true,
-              onTap: () => _setStatus(context, ref, UnitStatus.offMarket),
-            ),
-          );
-        }
+        buttons.add(
+          _Button(
+            label: 'Продано',
+            outlined: true,
+            onTap: () => _setStatus(context, ref, UnitStatus.sold),
+          ),
+        );
       case UnitStatus.work when mine:
         buttons.addAll([
           _Button(
@@ -460,17 +458,49 @@ class _Actions extends ConsumerWidget {
     final pick = await pickClient(context);
     if (pick == null || !context.mounted) return;
 
+    // Выбор дат брони
+    final now = DateTime.now();
+    final dateRange = await showDateRangePicker(
+      context: context,
+      firstDate: now,
+      lastDate: now.add(const Duration(days: 365)),
+      initialDateRange: DateTimeRange(
+        start: now,
+        end: now.add(const Duration(days: 3)),
+      ),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: ColorScheme.light(
+              primary: AppColors.brand,
+              onPrimary: Colors.white,
+              surface: Colors.white,
+              onSurface: AppColors.ink,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (dateRange == null || !context.mounted) return;
+
     final messenger = ScaffoldMessenger.of(context);
     try {
-      await ref
-          .read(panoramaRepositoryProvider)
-          .book(unitId: unit.id, manager: manager, client: pick.client);
+      final days = dateRange.end.difference(dateRange.start).inDays;
+      await ref.read(panoramaRepositoryProvider).book(
+        unitId: unit.id,
+        manager: manager,
+        client: pick.client,
+        dateFrom: dateRange.start,
+        dateTo: dateRange.end,
+      );
       ref.invalidate(dealsProvider);
       if (context.mounted) Navigator.of(context).pop();
       _snack(
         messenger,
         'Бронь оформлена',
-        'Кв. №${unit.number} держится 3 дня. Офис уведомлён.',
+        'Кв. №${unit.number} забронирована на $days дн. Офис уведомлён.',
       );
     } on LimitExceeded catch (e) {
       _snack(messenger, 'Лимит достигнут', e.message);

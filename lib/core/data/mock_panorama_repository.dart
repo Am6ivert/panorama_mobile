@@ -590,6 +590,8 @@ class MockPanoramaRepository implements PanoramaRepository {
     required String unitId,
     required ManagerModel manager,
     ClientModel? client,
+    required DateTime dateFrom,
+    required DateTime dateTo,
   }) async {
     _ensureUnderLimit(
       manager,
@@ -597,14 +599,17 @@ class MockPanoramaRepository implements PanoramaRepository {
       AppConfig.bookingLimitPerManager,
       'активных броней',
     );
+    final days = dateTo.difference(dateFrom).inDays;
     final unit = await _apply(
       unitId,
       status: UnitStatus.hold,
       manager: manager,
       client: client,
-      until: DateTime.now().add(AppConfig.bookingDuration),
+      until: dateTo,
       event: UnitEventKind.booked,
-      title: client == null ? 'Бронь на 3 дня' : 'Бронь на 3 дня — ${client.name}',
+      title: client == null
+          ? 'Бронь на $days дн. (${dateFrom.day}.${dateFrom.month} - ${dateTo.day}.${dateTo.month})'
+          : 'Бронь на $days дн. (${dateFrom.day}.${dateFrom.month} - ${dateTo.day}.${dateTo.month}) — ${client.name}',
       action: 'Бронирование',
     );
     if (client != null) _ensureDeal(unit, manager, client, DealStage.booking);

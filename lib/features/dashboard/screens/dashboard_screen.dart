@@ -93,11 +93,6 @@ class DashboardScreen extends ConsumerWidget {
               : ListView(
                   padding: const EdgeInsets.only(bottom: 24),
                   children: [
-                    const SectionTitle('Фонд по статусам'),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: _StatusGrid(stats: stats),
-                    ),
                     const SectionTitle('Работа сейчас'),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),

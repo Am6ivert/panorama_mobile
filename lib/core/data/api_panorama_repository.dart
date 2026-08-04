@@ -209,9 +209,16 @@ class ApiPanoramaRepository implements PanoramaRepository {
     required String unitId,
     required ManagerModel manager,
     ClientModel? client,
+    required DateTime dateFrom,
+    required DateTime dateTo,
   }) => _unitAction(
     '/units/$unitId/book',
-    {'manager_id': manager.id, 'client_id': client?.id},
+    {
+      'manager_id': manager.id,
+      'client_id': client?.id,
+      'date_from': dateFrom.toIso8601String(),
+      'date_to': dateTo.toIso8601String(),
+    },
   );
 
   @override

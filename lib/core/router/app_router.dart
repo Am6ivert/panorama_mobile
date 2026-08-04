@@ -53,7 +53,7 @@ abstract final class AppRouter {
     pageBuilder: (_, _, _) => page,
     transitionsBuilder: (_, anim, _, child) =>
         FadeTransition(opacity: anim, child: child),
-    transitionDuration: const Duration(milliseconds: 300),
+    transitionDuration: const Duration(milliseconds: 150),
   );
 
   static PageRouteBuilder<void> _slide(Widget page) => PageRouteBuilder(
@@ -65,6 +65,6 @@ abstract final class AppRouter {
       ).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
       child: child,
     ),
-    transitionDuration: const Duration(milliseconds: 280),
+    transitionDuration: const Duration(milliseconds: 180),
   );
 }
