@@ -400,6 +400,14 @@ class _Actions extends ConsumerWidget {
           ),
         ]);
       case UnitStatus.sold:
+        if (isAdmin) {
+          buttons.add(
+            _Button(
+              label: 'Вернуть в свободные',
+              onTap: () => _setStatus(context, ref, UnitStatus.free),
+            ),
+          );
+        }
         buttons.add(
           _Button(
             label: 'Показать похожие свободные',

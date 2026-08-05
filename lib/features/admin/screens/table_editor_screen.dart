@@ -332,6 +332,7 @@ class _EditCell extends StatelessWidget {
   @override
   Widget build(BuildContext context) => GestureDetector(
     onTap: onTap,
+    onLongPress: locked ? null : () => _editUnit(context, unit),
     child: Opacity(
       opacity: locked ? 0.5 : 1,
       child: Container(
@@ -371,6 +372,33 @@ class _EditCell extends StatelessWidget {
       ),
     ),
   );
+
+  Future<void> _editUnit(BuildContext context, UnitModel unit) async {
+    final updated = await showModalBottomSheet<UnitModel>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (context) => _UnitEditSheet(unit: unit),
+    );
+
+    if (updated == null || !context.mounted) return;
+
+    final by = context.findAncestorStateOfType<_TableEditorScreenState>()
+        ?.ref.read(currentUserProvider);
+    if (by == null) return;
+
+    final repo = context.findAncestorStateOfType<_TableEditorScreenState>()
+        ?.ref.read(panoramaRepositoryProvider);
+    if (repo == null) return;
+
+    await repo.updateUnit(updated, by: by);
+
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Квартира №${unit.number} обновлена')),
+      );
+    }
+  }
 }
 
 class _ApplyBar extends StatelessWidget {
@@ -415,5 +443,170 @@ class _ApplyBar extends StatelessWidget {
         FilledButton(onPressed: onStatus, child: const Text('Статус')),
       ],
     ),
+  );
+}
+
+class _UnitEditSheet extends StatefulWidget {
+  const _UnitEditSheet({required this.unit});
+
+  final UnitModel unit;
+
+  @override
+  State<_UnitEditSheet> createState() => _UnitEditSheetState();
+}
+
+class _UnitEditSheetState extends State<_UnitEditSheet> {
+  late final TextEditingController _area;
+  late final TextEditingController _kitchen;
+  late final TextEditingController _view;
+  late final TextEditingController _finish;
+  late int _bathrooms;
+
+  @override
+  void initState() {
+    super.initState();
+    _area = TextEditingController(text: widget.unit.area.toString());
+    _kitchen = TextEditingController(text: widget.unit.kitchen);
+    _view = TextEditingController(text: widget.unit.view);
+    _finish = TextEditingController(text: widget.unit.finish);
+    _bathrooms = widget.unit.bathrooms;
+  }
+
+  @override
+  void dispose() {
+    _area.dispose();
+    _kitchen.dispose();
+    _view.dispose();
+    _finish.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: EdgeInsets.fromLTRB(
+      18,
+      4,
+      18,
+      18 + MediaQuery.of(context).viewInsets.bottom,
+    ),
+    child: SingleChildScrollView(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Редактировать №${widget.unit.number}',
+            style: AppTextStyles.h2,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '${widget.unit.layoutName} · ${widget.unit.floor} этаж',
+            style: AppTextStyles.secondary,
+          ),
+          const SizedBox(height: 18),
+          _Field(
+            controller: _area,
+            label: 'Площадь (м²)',
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          ),
+          const SizedBox(height: 12),
+          _Field(controller: _kitchen, label: 'Кухня'),
+          const SizedBox(height: 12),
+          _Field(controller: _view, label: 'Вид из окон'),
+          const SizedBox(height: 12),
+          _Field(controller: _finish, label: 'Отделка'),
+          const SizedBox(height: 12),
+          Text('Санузлов', style: AppTextStyles.caption),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              for (var i = 1; i <= 3; i++)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: ChoiceChip(
+                    label: Text('$i'),
+                    selected: _bathrooms == i,
+                    onSelected: (selected) {
+                      if (selected) setState(() => _bathrooms = i);
+                    },
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: _save,
+              child: const Text('Сохранить'),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+
+  void _save() {
+    final area = double.tryParse(_area.text.trim());
+    if (area == null || area <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Укажите корректную площадь')),
+      );
+      return;
+    }
+
+    final updated = widget.unit.copyWith(
+      area: area,
+      kitchen: _kitchen.text.trim(),
+      view: _view.text.trim(),
+      finish: _finish.text.trim(),
+      bathrooms: _bathrooms,
+    );
+
+    Navigator.of(context).pop(updated);
+  }
+}
+
+class _Field extends StatelessWidget {
+  const _Field({
+    required this.controller,
+    required this.label,
+    this.keyboardType,
+  });
+
+  final TextEditingController controller;
+  final String label;
+  final TextInputType? keyboardType;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(label, style: AppTextStyles.caption),
+      const SizedBox(height: 6),
+      TextField(
+        controller: controller,
+        keyboardType: keyboardType,
+        style: const TextStyle(fontSize: 15, color: AppColors.ink),
+        decoration: InputDecoration(
+          isDense: true,
+          filled: true,
+          fillColor: AppColors.bg,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: AppColors.line),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: AppColors.line),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: AppColors.brand),
+          ),
+        ),
+      ),
+    ],
   );
 }
