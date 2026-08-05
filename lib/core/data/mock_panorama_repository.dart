@@ -56,8 +56,8 @@ class MockPanoramaRepository implements PanoramaRepository {
     ),
     const ManagerModel(
       id: 'm1',
-      name: 'Азамат Кубанычбеков',
-      login: 'azamat',
+      name: 'Марат Токтогулов',
+      login: 'marat',
       phone: '+996 555 10-22-30',
     ),
     const ManagerModel(
