@@ -26,6 +26,19 @@ abstract final class AppTheme {
       seedColor: AppColors.brand,
       surface: AppColors.surface,
     ),
+    // Более лёгкие и быстрые переходы между экранами на всех платформах —
+    // без «зумовой» анимации Material 3, которая ощущается медленной.
+    pageTransitionsTheme: const PageTransitionsTheme(
+      builders: {
+        TargetPlatform.android: FadeUpwardsPageTransitionsBuilder(),
+        TargetPlatform.iOS: FadeUpwardsPageTransitionsBuilder(),
+        TargetPlatform.windows: FadeUpwardsPageTransitionsBuilder(),
+        TargetPlatform.macOS: FadeUpwardsPageTransitionsBuilder(),
+        TargetPlatform.linux: FadeUpwardsPageTransitionsBuilder(),
+      },
+    ),
+    // Мгновенная реакция на нажатия (без «чернильной» задержки Material).
+    splashFactory: InkSparkle.splashFactory,
     dividerColor: AppColors.line,
     textTheme: const TextTheme(
       titleLarge: AppTextStyles.h1,

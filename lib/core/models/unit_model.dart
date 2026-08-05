@@ -21,8 +21,10 @@ class UnitModel {
     this.view = '',
     this.finish = '',
     this.bathrooms = 1,
+    this.isPenthouse = false,
     this.heldById,
     this.heldByName,
+    this.heldFrom,
     this.heldUntil,
     this.clientId,
     this.clientName,
@@ -51,9 +53,15 @@ class UnitModel {
   final String finish;
   final int bathrooms;
 
+  /// Пентхаус (верхний уровень, отдельный тип квартиры).
+  final bool isPenthouse;
+
   /// Кто держит квартиру — заполнено для «в работе», «бронь», «оформление».
   final String? heldById;
   final String? heldByName;
+
+  /// Начало брони (FR-07: бронь на диапазон дат «с какой по какую»).
+  final DateTime? heldFrom;
   final DateTime? heldUntil;
 
   final String? clientId;
@@ -61,11 +69,13 @@ class UnitModel {
 
   final List<UnitEvent> history;
 
-  /// «Студия», «2-комн.»
-  String get layoutName => rooms == 0 ? 'Студия' : '$rooms-комн.';
+  /// «Студия», «2-комн.», «Пентхаус».
+  String get layoutName =>
+      isPenthouse ? 'Пентхаус' : (rooms == 0 ? 'Студия' : '$rooms-комн.');
 
-  /// Короткая подпись для клетки шахматки: «Ст», «2к».
-  String get shortLayout => rooms == 0 ? 'Ст' : '$roomsк';
+  /// Короткая подпись для клетки шахматки: «Ст», «2к», «ПХ» (пентхаус).
+  String get shortLayout =>
+      isPenthouse ? 'ПХ' : (rooms == 0 ? 'Ст' : '$roomsк');
 
   bool heldBy(String managerId) => heldById == managerId;
 
@@ -81,6 +91,7 @@ class UnitModel {
     UnitStatus? status,
     String? heldById,
     String? heldByName,
+    DateTime? heldFrom,
     DateTime? heldUntil,
     String? clientId,
     String? clientName,
@@ -91,6 +102,7 @@ class UnitModel {
     String? view,
     String? finish,
     int? bathrooms,
+    bool? isPenthouse,
     bool clearHold = false,
   }) => UnitModel(
     id: id,
@@ -107,8 +119,10 @@ class UnitModel {
     view: view ?? this.view,
     finish: finish ?? this.finish,
     bathrooms: bathrooms ?? this.bathrooms,
+    isPenthouse: isPenthouse ?? this.isPenthouse,
     heldById: clearHold ? null : (heldById ?? this.heldById),
     heldByName: clearHold ? null : (heldByName ?? this.heldByName),
+    heldFrom: clearHold ? null : (heldFrom ?? this.heldFrom),
     heldUntil: clearHold ? null : (heldUntil ?? this.heldUntil),
     clientId: clearHold ? null : (clientId ?? this.clientId),
     clientName: clearHold ? null : (clientName ?? this.clientName),
@@ -130,8 +144,12 @@ class UnitModel {
     view: json['view'] as String? ?? '',
     finish: json['finish'] as String? ?? '',
     bathrooms: (json['bathrooms'] as num?)?.toInt() ?? 1,
+    isPenthouse: json['is_penthouse'] as bool? ?? false,
     heldById: json['held_by_id'] as String?,
     heldByName: json['held_by_name'] as String?,
+    heldFrom: json['held_from'] == null
+        ? null
+        : DateTime.parse(json['held_from'] as String),
     heldUntil: json['held_until'] == null
         ? null
         : DateTime.parse(json['held_until'] as String),
@@ -159,8 +177,10 @@ class UnitModel {
     'view': view,
     'finish': finish,
     'bathrooms': bathrooms,
+    'is_penthouse': isPenthouse,
     'held_by_id': heldById,
     'held_by_name': heldByName,
+    'held_from': heldFrom?.toIso8601String(),
     'held_until': heldUntil?.toIso8601String(),
     'client_id': clientId,
     'client_name': clientName,

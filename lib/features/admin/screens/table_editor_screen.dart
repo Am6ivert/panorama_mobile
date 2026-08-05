@@ -55,6 +55,7 @@ class _TableEditorScreenState extends ConsumerState<TableEditorScreen> {
               count: _selected.length,
               onRooms: () => _applyRooms(context),
               onStatus: () => _applyStatus(context),
+              onType: () => _applyType(context),
             ),
       body: Column(
         children: [
@@ -149,6 +150,19 @@ class _TableEditorScreenState extends ConsumerState<TableEditorScreen> {
     );
     if (status == null) return;
     await _bulkUpdate((u) => u.copyWith(status: status, clearHold: true));
+  }
+
+  Future<void> _applyType(BuildContext context) async {
+    final penthouse = await _pick<bool>(
+      context,
+      'Тип для ${_selected.length} квартир',
+      const [
+        ('Обычная квартира', false),
+        ('Пентхаус', true),
+      ],
+    );
+    if (penthouse == null) return;
+    await _bulkUpdate((u) => u.copyWith(isPenthouse: penthouse));
   }
 
   Future<void> _bulkUpdate(UnitModel Function(UnitModel) transform) async {
@@ -378,11 +392,13 @@ class _ApplyBar extends StatelessWidget {
     required this.count,
     required this.onRooms,
     required this.onStatus,
+    required this.onType,
   });
 
   final int count;
   final VoidCallback onRooms;
   final VoidCallback onStatus;
+  final VoidCallback onType;
 
   @override
   Widget build(BuildContext context) => Container(
@@ -403,17 +419,29 @@ class _ApplyBar extends StatelessWidget {
           style: AppTextStyles.bodyStrong,
         ),
         const Spacer(),
-        OutlinedButton(
-          onPressed: onRooms,
-          style: OutlinedButton.styleFrom(
-            side: const BorderSide(color: AppColors.line),
-            foregroundColor: AppColors.ink,
-          ),
-          child: const Text('Комнаты'),
-        ),
+        _MiniAction(label: 'Комнаты', onTap: onRooms),
+        const SizedBox(width: 8),
+        _MiniAction(label: 'Тип', onTap: onType),
         const SizedBox(width: 8),
         FilledButton(onPressed: onStatus, child: const Text('Статус')),
       ],
     ),
+  );
+}
+
+class _MiniAction extends StatelessWidget {
+  const _MiniAction({required this.label, required this.onTap});
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => OutlinedButton(
+    onPressed: onTap,
+    style: OutlinedButton.styleFrom(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      side: const BorderSide(color: AppColors.line),
+      foregroundColor: AppColors.ink,
+    ),
+    child: Text(label),
   );
 }

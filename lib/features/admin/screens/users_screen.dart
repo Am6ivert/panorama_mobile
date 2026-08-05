@@ -266,7 +266,7 @@ class _CreateUserSheetState extends ConsumerState<_CreateUserSheet> {
   final _formKey = GlobalKey<FormState>();
   final _name = TextEditingController();
   final _login = TextEditingController();
-  final _phone = TextEditingController(text: '+996 ');
+  final _phone = TextEditingController();
   UserRole _role = UserRole.manager;
   bool _saving = false;
 
@@ -323,9 +323,9 @@ class _CreateUserSheetState extends ConsumerState<_CreateUserSheet> {
               inputFormatters: [
                 FilteringTextInputFormatter.allow(RegExp(r'[0-9+\-() ]')),
               ],
-              decoration: _dec('Телефон'),
+              decoration: _dec('Телефон (любой, можно иностранный)'),
               validator: (v) =>
-                  (v ?? '').replaceAll(RegExp(r'[^0-9]'), '').length < 9
+                  (v ?? '').replaceAll(RegExp(r'[^0-9]'), '').length < 6
                   ? 'Похоже, номер неполный'
                   : null,
             ),

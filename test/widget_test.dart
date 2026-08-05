@@ -41,7 +41,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Дашборд'), findsWidgets);
-    expect(find.text('ФОНД ПО СТАТУСАМ'), findsOneWidget);
+    expect(find.text('КВАРТИРЫ ПО СТАТУСАМ'), findsOneWidget);
   });
 
   testWidgets('неверный пароль не пускает в приложение', (tester) async {
@@ -54,7 +54,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Неверный пароль'), findsOneWidget);
-    expect(find.text('Фонд по статусам'), findsNothing);
+    expect(find.text('КВАРТИРЫ ПО СТАТУСАМ'), findsNothing);
   });
 
   test('вход администратора по логину распознаёт роль', () async {

@@ -124,6 +124,16 @@ class ApiPanoramaRepository implements PanoramaRepository {
         'complex_id': spec.complexId,
         'block': spec.blockName,
         'start_number': spec.startNumber,
+        'groups': [
+          for (final g in spec.groups)
+            {
+              'floor_from': g.floorFrom,
+              'floor_to': g.floorTo,
+              'rooms': g.roomsPerPosition,
+            },
+        ],
+        'technical_floors': spec.technicalFloors.toList(),
+        'skip_numbers': spec.skipNumbers.toList(),
       },
     );
     return (res['created'] as num?)?.toInt() ?? 0;
@@ -209,9 +219,16 @@ class ApiPanoramaRepository implements PanoramaRepository {
     required String unitId,
     required ManagerModel manager,
     ClientModel? client,
+    DateTime? from,
+    DateTime? until,
   }) => _unitAction(
     '/units/$unitId/book',
-    {'manager_id': manager.id, 'client_id': client?.id},
+    {
+      'manager_id': manager.id,
+      'client_id': client?.id,
+      'from': from?.toIso8601String(),
+      'until': until?.toIso8601String(),
+    },
   );
 
   @override

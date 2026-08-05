@@ -71,9 +71,11 @@ class Api {
 
   static const _userSelect = '''
     SELECT u.id::text AS id, u.full_name AS name, u.login, u.phone,
+           u.company_id::text AS company_id, co.name AS company_name,
            COALESCE((SELECT role_code FROM user_roles WHERE user_id=u.id LIMIT 1),'manager') AS role,
            u.blocked, u.must_change_password AS must_change_password
-    FROM users u WHERE u.deleted_at IS NULL''';
+    FROM users u JOIN companies co ON co.id = u.company_id
+    WHERE u.deleted_at IS NULL''';
 
   static const _complexSelect = '''
     SELECT c.id::text AS id, c.name, COALESCE(c.address,'') AS address,
@@ -102,12 +104,14 @@ class Api {
            b.name AS block,
            a.floor, a.position, a.number, a.rooms,
            a.area::float8 AS area, a.status,
+           a.is_penthouse,
            COALESCE(a.kitchen,'') AS kitchen,
            COALESCE(a.view,'') AS view,
            COALESCE(a.finish,'') AS finish,
            a.bathrooms,
            a.held_by_id::text AS held_by_id,
            hu.full_name AS held_by_name,
+           to_char(a.held_from AT TIME ZONE 'Asia/Bishkek','YYYY-MM-DD"T"HH24:MI:SS.US') AS held_from,
            to_char(a.held_until AT TIME ZONE 'Asia/Bishkek','YYYY-MM-DD"T"HH24:MI:SS.US') AS held_until,
            a.client_id::text AS client_id,
            cl.full_name AS client_name,
@@ -136,6 +140,26 @@ class Api {
 
   Map<String, dynamic> _complexJson(Map<String, dynamic> row) =>
       {...row, 'blocks': asJsonList(row['blocks'])};
+
+  // ===========================================================================
+  // Мультитенант: компания вошедшего определяется по токену сессии.
+  // Все списки и вставки скоупятся по этой компании — данные разных компаний
+  // не пересекаются.
+  // ===========================================================================
+
+  Future<String?> _companyOf(Request request) async {
+    final auth = request.headers['authorization'];
+    if (auth == null || auth.isEmpty) return null;
+    final token = auth.startsWith('Bearer ') ? auth.substring(7) : auth;
+    final r = await db.one(
+      '''SELECT u.company_id::text AS c
+         FROM sessions s JOIN users u ON u.id = s.user_id
+         WHERE s.token_hash = @t AND s.revoked_at IS NULL
+               AND s.expires_at > now() AND u.deleted_at IS NULL''',
+      {'t': token},
+    );
+    return r?['c'] as String?;
+  }
 
   // ===========================================================================
   // Аутентификация
@@ -172,15 +196,22 @@ class Api {
   // Пользователи
   // ===========================================================================
 
-  Future<Response> _users(Request request) async =>
-      jsonOk(await db.query('$_userSelect ORDER BY u.login'));
+  Future<Response> _users(Request request) async {
+    final company = await _companyOf(request);
+    if (company == null) return jsonError(401, 'Требуется авторизация');
+    return jsonOk(
+      await db.query('$_userSelect AND u.company_id=@c ORDER BY u.login', {'c': company}),
+    );
+  }
 
   Future<Response> _createUser(Request request) async {
+    final company = await _companyOf(request);
+    if (company == null) return jsonError(401, 'Требуется авторизация');
     final b = await readJson(request);
     final row = await db.one(
       '''WITH nu AS (
-           INSERT INTO users (full_name, login, phone, password_hash, must_change_password)
-           VALUES (@name, lower(@login), @phone, crypt('0000', gen_salt('bf')), true)
+           INSERT INTO users (company_id, full_name, login, phone, password_hash, must_change_password)
+           VALUES (@company, @name, lower(@login), @phone, crypt('0000', gen_salt('bf')), true)
            RETURNING id
          ), ur AS (
            INSERT INTO user_roles (user_id, role_code)
@@ -188,6 +219,7 @@ class Api {
          )
          SELECT id::text AS id FROM nu''',
       {
+        'company': company,
         'name': b['name'],
         'login': b['login'],
         'phone': b['phone'],
@@ -239,11 +271,15 @@ class Api {
   // Недвижимость
   // ===========================================================================
 
-  Future<Response> _complexes(Request request) async => jsonOk(
-        (await db.query('$_complexSelect ORDER BY c.created_at'))
-            .map(_complexJson)
-            .toList(),
-      );
+  Future<Response> _complexes(Request request) async {
+    final company = await _companyOf(request);
+    if (company == null) return jsonError(401, 'Требуется авторизация');
+    return jsonOk(
+      (await db.query('$_complexSelect AND c.company_id=@c ORDER BY c.created_at', {'c': company}))
+          .map(_complexJson)
+          .toList(),
+    );
+  }
 
   static const _covers = [
     [0xFF1E3A8A, 0xFF3B82F6],
@@ -255,13 +291,19 @@ class Api {
   ];
 
   Future<Response> _createComplex(Request request) async {
+    final company = await _companyOf(request);
+    if (company == null) return jsonError(401, 'Требуется авторизация');
     final b = await readJson(request);
-    final n = (await db.one('SELECT count(*) AS n FROM complexes'))!['n'] as int;
+    final n = (await db.one(
+      'SELECT count(*) AS n FROM complexes WHERE company_id=@c',
+      {'c': company},
+    ))!['n'] as int;
     final cover = _covers[n % _covers.length];
     final row = await db.one(
-      '''INSERT INTO complexes (name, address, deadline, segment, cover_start, cover_end)
-         VALUES (@name, @address, @deadline, @segment, @cs, @ce) RETURNING id''',
+      '''INSERT INTO complexes (company_id, name, address, deadline, segment, cover_start, cover_end)
+         VALUES (@company, @name, @address, @deadline, @segment, @cs, @ce) RETURNING id''',
       {
+        'company': company,
         'name': b['name'],
         'address': b['address'],
         'deadline': b['deadline'],
@@ -276,8 +318,16 @@ class Api {
   }
 
   Future<Response> _bulkBlock(Request request) async {
+    final company = await _companyOf(request);
+    if (company == null) return jsonError(401, 'Требуется авторизация');
     final b = await readJson(request);
     final complexId = b['complex_id'] as String;
+    // ЖК должен принадлежать компании вошедшего.
+    final owned = await db.one(
+      'SELECT 1 FROM complexes WHERE id=@id AND company_id=@c AND deleted_at IS NULL',
+      {'id': complexId, 'c': company},
+    );
+    if (owned == null) return jsonError(404, 'Объект не найден');
     final blockName = b['block'] as String;
     final startNumber = (b['start_number'] as num?)?.toInt() ?? 1;
     final groups = (b['groups'] as List?) ?? const [];
@@ -295,9 +345,10 @@ class Api {
 
     final created = await db.tx((s) async {
       final blockRow = await s.one(
-        '''INSERT INTO blocks (complex_id, name, floors, units_per_floor)
-           VALUES (@c, @n, @f, @u) RETURNING id''',
+        '''INSERT INTO blocks (company_id, complex_id, name, floors, units_per_floor)
+           VALUES (@company, @c, @n, @f, @u) RETURNING id''',
         {
+          'company': company,
           'c': complexId,
           'n': blockName,
           'f': groups.isEmpty
@@ -331,9 +382,10 @@ class Api {
           final r = rooms[pos].toInt();
           await s.query(
             '''INSERT INTO apartments
-                 (block_id, complex_id, floor, position, number, rooms, area, status, kitchen, view, finish, bathrooms)
-               VALUES (@b, @c, @f, @p, @n, @r, @area, 'free', @kit, @view, @fin, @bath)''',
+                 (company_id, block_id, complex_id, floor, position, number, rooms, area, status, kitchen, view, finish, bathrooms)
+               VALUES (@company, @b, @c, @f, @p, @n, @r, @area, 'free', @kit, @view, @fin, @bath)''',
             {
+              'company': company,
               'b': blockId,
               'c': complexId,
               'f': floor,
@@ -360,27 +412,41 @@ class Api {
   // Фонд (список; действия — в actions.dart части ниже)
   // ===========================================================================
 
-  Future<Response> _units(Request request) async => jsonOk(
-        (await db.query('$_unitSelect WHERE a.deleted_at IS NULL ORDER BY c.name, b.name, a.number'))
-            .map(_unitJson)
-            .toList(),
-      );
+  Future<Response> _units(Request request) async {
+    final company = await _companyOf(request);
+    if (company == null) return jsonError(401, 'Требуется авторизация');
+    return jsonOk(
+      (await db.query(
+        '$_unitSelect WHERE a.deleted_at IS NULL AND a.company_id=@c ORDER BY c.name, b.name, a.number',
+        {'c': company},
+      )).map(_unitJson).toList(),
+    );
+  }
 
   // ===========================================================================
   // Клиенты
   // ===========================================================================
 
-  Future<Response> _clients(Request request) async =>
-      jsonOk(await db.query('$_clientSelect ORDER BY cl.created_at DESC'));
+  Future<Response> _clients(Request request) async {
+    final company = await _companyOf(request);
+    if (company == null) return jsonError(401, 'Требуется авторизация');
+    return jsonOk(await db.query(
+      '$_clientSelect AND cl.company_id=@c ORDER BY cl.created_at DESC',
+      {'c': company},
+    ));
+  }
 
   Future<Response> _createClient(Request request) async {
+    final company = await _companyOf(request);
+    if (company == null) return jsonError(401, 'Требуется авторизация');
     final b = await readJson(request);
     final row = await db.one(
-      '''INSERT INTO clients (full_name, phone, seller_id, rooms, source, request, note)
-         VALUES (@name, @phone, @seller, @rooms, @source, @request, @note)
+      '''INSERT INTO clients (company_id, full_name, phone, seller_id, rooms, source, request, note)
+         VALUES (@company, @name, @phone, @seller, @rooms, @source, @request, @note)
          ON CONFLICT (seller_id, phone) WHERE deleted_at IS NULL DO UPDATE SET full_name=EXCLUDED.full_name
          RETURNING id''',
       {
+        'company': company,
         'name': b['name'],
         'phone': b['phone'],
         'seller': b['seller_id'],
@@ -447,14 +513,27 @@ class Api {
     if (!actor.isAdmin && await _heldCount(b['manager_id'] as String, 'hold') >= 5) {
       return jsonError(422, 'Достигнут лимит: активных броней — 5. Снимите одну.');
     }
+    // Диапазон дат брони «с какой по какую» (FR-07.6). Если не задан — с сейчас
+    // на 3 дня.
+    final fromRaw = b['from'] as String?;
+    final untilRaw = b['until'] as String?;
+    final fromTs = fromRaw == null ? null : DateTime.tryParse(fromRaw);
+    final untilTs = untilRaw == null ? null : DateTime.tryParse(untilRaw);
     final res = await _apply(
       id,
       toStatus: 'hold',
       from: const ['free', 'work'],
       managerId: b['manager_id'] as String,
       clientId: b['client_id'] as String?,
-      hold: "now() + interval '3 days'",
-      title: 'Бронь на 3 дня',
+      holdFrom: fromTs == null ? 'now()' : '@hf',
+      hold: untilTs == null ? "now() + interval '3 days'" : '@hu',
+      params: {
+        if (fromTs != null) 'hf': fromTs,
+        if (untilTs != null) 'hu': untilTs,
+      },
+      title: untilTs == null
+          ? 'Бронь на 3 дня'
+          : 'Бронь ${_fmtRange(fromTs, untilTs)}',
     );
     if (res.statusCode == 200) {
       await _notifyTeam(b['manager_id'] as String, id, 'booked',
@@ -494,11 +573,11 @@ class Api {
       keepHolder: true,
       title: 'Отправлена на оформление',
     );
-    // FR-11.5: отправлена на оформление → администратор.
+    // FR-11.5: отправлена на оформление → администратор компании.
     if (res.statusCode == 200) {
       final label = await _unitLabel(id);
       await _notifyUsers(
-        await _adminIds(),
+        await _adminIds(await _companyOfUnit(id)),
         'design',
         'Квартира на оформление',
         '$label — ${actor.name}',
@@ -510,13 +589,16 @@ class Api {
 
   Future<Response> _sell(Request request, String id) async {
     final b = await readJson(request);
-    final actor = await _actor(b['admin_id'] as String?);
+    // «Продано» доступно всем ролям (FR-06): и администратору, и ответственному
+    // менеджеру, из любого активного статуса.
+    final actorId = (b['by_id'] ?? b['admin_id'] ?? b['manager_id']) as String?;
+    final actor = await _actor(actorId);
     if (actor == null) return jsonError(404, 'Пользователь не найден');
     return _apply(
       id,
       toStatus: 'sold',
-      from: const ['design'],
-      managerId: b['admin_id'] as String,
+      from: const ['work', 'hold', 'design'],
+      managerId: actorId,
       keepHolder: true,
       title: 'Продажа подтверждена',
     );
@@ -553,6 +635,7 @@ class Api {
     await db.query(
       '''UPDATE apartments SET rooms=@rooms, area=@area, status=@status,
              kitchen=@kitchen, view=@view, finish=@finish, bathrooms=@bath,
+             is_penthouse=@penthouse,
              updated_at=now(), version=version+1
          WHERE id=@id AND deleted_at IS NULL''',
       {
@@ -563,6 +646,7 @@ class Api {
         'view': b['view'] ?? '',
         'finish': b['finish'] ?? '',
         'bath': (b['bathrooms'] as num?)?.toInt() ?? 1,
+        'penthouse': b['is_penthouse'] == true,
         'id': id,
       },
     );
@@ -579,8 +663,8 @@ class Api {
     if (from != null && unit?['h'] != null) {
       final body = '${from.name} спрашивает по квартире';
       await db.query(
-        '''INSERT INTO notifications (recipient_id, kind, title, body, apartment_id)
-           VALUES (@r, 'message', 'Сообщение по квартире', @body, @id)''',
+        '''INSERT INTO notifications (company_id, recipient_id, kind, title, body, apartment_id)
+           VALUES ((SELECT company_id FROM users WHERE id=@r), @r, 'message', 'Сообщение по квартире', @body, @id)''',
         {'r': unit!['h'], 'body': body, 'id': id},
       );
       await _pushFcm(
@@ -602,6 +686,8 @@ class Api {
     String? managerId,
     String? clientId,
     String? hold, // SQL-выражение для held_until, иначе NULL
+    String? holdFrom, // SQL-выражение для held_from, иначе NULL
+    Map<String, dynamic> params = const {},
     bool clearHold = false,
     bool keepHolder = false,
     required String title,
@@ -611,6 +697,11 @@ class Api {
         : keepHolder
             ? 'held_until'
             : (hold ?? 'NULL');
+    final fromExpr = clearHold
+        ? 'NULL'
+        : keepHolder
+            ? 'held_from'
+            : (holdFrom ?? 'NULL');
     final holderExpr = clearHold
         ? 'NULL'
         : keepHolder
@@ -625,7 +716,8 @@ class Api {
     final ok = await db.tx((s) async {
       final rows = await s.query(
         '''UPDATE apartments
-           SET status=@to, held_by_id=$holderExpr, held_until=$heldExpr,
+           SET status=@to, held_by_id=$holderExpr,
+               held_from=$fromExpr, held_until=$heldExpr,
                client_id=$clientExpr, updated_at=now(), version=version+1
            WHERE id=@id AND status = ANY(@from) AND deleted_at IS NULL
            RETURNING id''',
@@ -633,6 +725,7 @@ class Api {
           'to': toStatus,
           'from': from,
           'id': id,
+          ...params,
           if (!keepHolder && !clearHold) 'm': managerId,
           if (!keepHolder && !clearHold) 'c': clientId,
         },
@@ -689,8 +782,8 @@ class Api {
       );
     } else if (clientId != null && sellerId != null && stage != 'done') {
       await s.query(
-        '''INSERT INTO deals (client_id, apartment_id, seller_id, stage)
-           VALUES (@c, @a, @s, @st)''',
+        '''INSERT INTO deals (company_id, client_id, apartment_id, seller_id, stage)
+           VALUES ((SELECT company_id FROM apartments WHERE id=@a), @c, @a, @s, @st)''',
         {'c': clientId, 'a': aptId, 's': sellerId, 'st': stage},
       );
     }
@@ -703,16 +796,22 @@ class Api {
     String title,
     String body,
   ) async {
+    // Уведомляем только сотрудников компании этой квартиры (изоляция).
     await db.query(
-      '''INSERT INTO notifications (recipient_id, kind, title, body, apartment_id)
-         SELECT id, @kind, @title, @body, @apt
-         FROM users WHERE id <> @actor AND blocked=false AND deleted_at IS NULL''',
+      '''INSERT INTO notifications (company_id, recipient_id, kind, title, body, apartment_id)
+         SELECT u.company_id, u.id, @kind, @title, @body, @apt
+         FROM users u
+         WHERE u.id <> @actor
+               AND u.company_id = (SELECT company_id FROM apartments WHERE id=@apt)
+               AND u.blocked=false AND u.deleted_at IS NULL''',
       {'actor': actorId, 'kind': kind, 'title': title, 'body': body, 'apt': unitId},
     );
     await _pushFcm(
       '''SELECT d.push_token AS t FROM devices d JOIN users u ON u.id=d.user_id
-         WHERE u.id <> @actor AND u.blocked=false AND u.deleted_at IS NULL''',
-      {'actor': actorId},
+         WHERE u.id <> @actor
+               AND u.company_id = (SELECT company_id FROM apartments WHERE id=@apt)
+               AND u.blocked=false AND u.deleted_at IS NULL''',
+      {'actor': actorId, 'apt': unitId},
       title: title,
       body: body,
       unitId: unitId,
@@ -740,9 +839,10 @@ class Api {
   Future<Response> _registerDevice(Request request) async {
     final b = await readJson(request);
     await db.query(
-      '''INSERT INTO devices (user_id, platform, push_token)
-         VALUES (@u, @p, @t)
-         ON CONFLICT (push_token) DO UPDATE SET user_id=@u, updated_at=now()''',
+      '''INSERT INTO devices (company_id, user_id, platform, push_token)
+         VALUES ((SELECT company_id FROM users WHERE id=@u), @u, @p, @t)
+         ON CONFLICT (push_token) DO UPDATE SET user_id=@u,
+             company_id=(SELECT company_id FROM users WHERE id=@u), updated_at=now()''',
       {'u': b['user_id'], 'p': b['platform'], 't': b['token']},
     );
     return jsonOk({'ok': true});
@@ -769,8 +869,14 @@ class Api {
     JOIN users su ON su.id = d.seller_id
     WHERE d.deleted_at IS NULL''';
 
-  Future<Response> _deals(Request request) async =>
-      jsonOk(await db.query('$_dealSelect ORDER BY d.created_at DESC'));
+  Future<Response> _deals(Request request) async {
+    final company = await _companyOf(request);
+    if (company == null) return jsonError(401, 'Требуется авторизация');
+    return jsonOk(await db.query(
+      '$_dealSelect AND d.company_id=@c ORDER BY d.created_at DESC',
+      {'c': company},
+    ));
+  }
 
   Future<Response> _dealStage(Request request, String id) async {
     final b = await readJson(request);
@@ -813,15 +919,21 @@ class Api {
     return jsonOk({});
   }
 
-  Future<Response> _audit(Request request) async => jsonOk(await db.query(
-        '''SELECT a.id::text AS id,
-                  to_char(a.at AT TIME ZONE 'Asia/Bishkek','YYYY-MM-DD"T"HH24:MI:SS.US') AS at,
-                  COALESCE(u.full_name,'Система') AS user_name,
-                  a.action, COALESCE(a.entity_type,'') AS entity,
-                  COALESCE(a.entity_id,'') AS details
-           FROM audit_logs a LEFT JOIN users u ON u.id=a.user_id
-           ORDER BY a.at DESC LIMIT 200''',
-      ));
+  Future<Response> _audit(Request request) async {
+    final company = await _companyOf(request);
+    if (company == null) return jsonError(401, 'Требуется авторизация');
+    return jsonOk(await db.query(
+      '''SELECT a.id::text AS id,
+                to_char(a.at AT TIME ZONE 'Asia/Bishkek','YYYY-MM-DD"T"HH24:MI:SS.US') AS at,
+                COALESCE(u.full_name,'Система') AS user_name,
+                a.action, COALESCE(a.entity_type,'') AS entity,
+                COALESCE(a.entity_id,'') AS details
+         FROM audit_logs a JOIN users u ON u.id=a.user_id
+         WHERE u.company_id=@c
+         ORDER BY a.at DESC LIMIT 200''',
+      {'c': company},
+    ));
+  }
 
   // ===========================================================================
   // Вспомогательное
@@ -839,6 +951,13 @@ class Api {
     return bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
   }
 
+  /// `с 21.08 по 24.08` — период брони для истории.
+  String _fmtRange(DateTime? from, DateTime to) {
+    String d(DateTime t) =>
+        '${t.day.toString().padLeft(2, '0')}.${t.month.toString().padLeft(2, '0')}';
+    return from == null ? 'до ${d(to)}' : 'с ${d(from)} по ${d(to)}';
+  }
+
   // ===========================================================================
   // Адресные уведомления + проверка истечения броней (FR-11.2/11.3/11.4/11.5)
   // ===========================================================================
@@ -846,10 +965,24 @@ class Api {
   // Кого уже предупреждали об истечении (apartmentId -> held_until).
   final _warned = <String, String>{};
 
-  Future<List<String>> _adminIds() async =>
-      (await db.query("SELECT user_id::text AS id FROM user_roles WHERE role_code='admin'"))
-          .map((r) => r['id'] as String)
-          .toList();
+  /// Администраторы КОНКРЕТНОЙ компании (изоляция — не уведомляем чужих).
+  Future<List<String>> _adminIds(String? companyId) async {
+    if (companyId == null) return const [];
+    return (await db.query(
+      '''SELECT ur.user_id::text AS id FROM user_roles ur
+         JOIN users u ON u.id = ur.user_id
+         WHERE ur.role_code='admin' AND u.company_id=@c AND u.deleted_at IS NULL''',
+      {'c': companyId},
+    )).map((r) => r['id'] as String).toList();
+  }
+
+  Future<String?> _companyOfUnit(String unitId) async {
+    final r = await db.one(
+      'SELECT company_id::text AS c FROM apartments WHERE id=@id',
+      {'id': unitId},
+    );
+    return r?['c'] as String?;
+  }
 
   Future<String> _unitLabel(String id) async {
     final r = await db.one(
@@ -871,8 +1004,8 @@ class Api {
   ) async {
     if (userIds.isEmpty) return;
     await db.query(
-      '''INSERT INTO notifications (recipient_id, kind, title, body, apartment_id)
-         SELECT id, @kind, @title, @body, @apt
+      '''INSERT INTO notifications (company_id, recipient_id, kind, title, body, apartment_id)
+         SELECT company_id, id, @kind, @title, @body, @apt
          FROM users WHERE id = ANY(@ids) AND deleted_at IS NULL''',
       {'kind': kind, 'title': title, 'body': body, 'apt': unitId, 'ids': userIds},
     );
@@ -922,6 +1055,7 @@ class Api {
     // 2) Брони, истекающие в ближайшие 24 часа — предупредить один раз (FR-11.2).
     final soon = await db.query(
       '''SELECT a.id::text AS id, a.held_by_id::text AS holder,
+                a.company_id::text AS company,
                 to_char(a.held_until,'YYYY-MM-DD"T"HH24:MI:SS') AS until,
                 (c.name || ' · ' || b.name || ' · №' || a.number::text) AS label
          FROM apartments a JOIN complexes c ON c.id=a.complex_id
@@ -930,7 +1064,6 @@ class Api {
                AND a.held_until < now() + interval '24 hours'
                AND a.deleted_at IS NULL''',
     );
-    final admins = await _adminIds();
     for (final u in soon) {
       final id = u['id'] as String;
       final until = u['until'] as String;
@@ -938,6 +1071,8 @@ class Api {
       _warned[id] = until;
       final holder = u['holder'] as String?;
       final label = u['label'] as String;
+      // Уведомляем держателя и админов ТОЙ ЖЕ компании (изоляция).
+      final admins = await _adminIds(u['company'] as String?);
       final recipients = <String>{if (holder != null) holder, ...admins}.toList();
       await _notifyUsers(recipients, 'expiring', 'Бронь истекает',
           '$label — осталось меньше 24 часов', id);

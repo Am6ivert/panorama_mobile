@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/config/app_config.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/data/panorama_repository.dart';
@@ -168,7 +169,7 @@ class _StatusNote extends StatelessWidget {
         AppColors.workInk,
       ),
       UnitStatus.hold => (
-        'Бронь${until == null ? '' : ' ${TimeFormat.until(until)}'} · '
+        '${unit.heldFrom != null && until != null ? 'Бронь ${TimeFormat.range(unit.heldFrom!, until)}' : 'Бронь${until == null ? '' : ' ${TimeFormat.until(until)}'}'} · '
             'менеджер ${unit.heldByName ?? '—'}$clientLine',
         AppColors.holdBg,
         AppColors.holdInk,
@@ -299,20 +300,16 @@ class _Actions extends ConsumerWidget {
             onTap: () => _similar(context, ref),
           ),
         ]);
-        if (isAdmin) {
-          buttons.add(
-            _Button(
-              label: 'Снять с продажи',
-              outlined: true,
-              onTap: () => _setStatus(context, ref, UnitStatus.offMarket),
-            ),
-          );
-        }
       case UnitStatus.work when mine:
         buttons.addAll([
           _Button(
             label: 'Клиент согласен — забронировать',
             onTap: () => _book(context, ref),
+          ),
+          _Button(
+            label: 'Продано',
+            color: AppColors.sold,
+            onTap: () => _confirmSale(context, ref),
           ),
           _Button(
             label: 'Освободить',
@@ -325,6 +322,11 @@ class _Actions extends ConsumerWidget {
           _Button(
             label: 'Отправить на оформление',
             onTap: () => _design(context, ref),
+          ),
+          _Button(
+            label: 'Продано',
+            color: AppColors.sold,
+            onTap: () => _confirmSale(context, ref),
           ),
           _Row([
             _Button(
@@ -361,8 +363,8 @@ class _Actions extends ConsumerWidget {
       case UnitStatus.design when isAdmin:
         buttons.addAll([
           _Button(
-            label: 'Подтвердить продажу',
-            color: AppColors.free,
+            label: 'Продано',
+            color: AppColors.sold,
             onTap: () => _confirmSale(context, ref),
           ),
           _Button(
@@ -372,22 +374,20 @@ class _Actions extends ConsumerWidget {
           ),
         ]);
       case UnitStatus.design when mine:
-        // Ответственный менеджер: продажу подтверждает администратор — ждём.
-        buttons.add(
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-            decoration: BoxDecoration(
-              color: AppColors.designBg,
-              borderRadius: BorderRadius.circular(13),
-            ),
-            child: const Text(
-              'Документы на оформлении. Продажу подтвердит администратор — '
-              'вы получите уведомление.',
-              style: TextStyle(fontSize: 13, height: 1.4, color: AppColors.designInk),
-            ),
+        // Ответственный менеджер может закрыть сделку сам (FR-06: «Продано»
+        // доступно всем ролям).
+        buttons.addAll([
+          _Button(
+            label: 'Продано',
+            color: AppColors.sold,
+            onTap: () => _confirmSale(context, ref),
           ),
-        );
+          _Button(
+            label: 'Вернуть в свободные',
+            outlined: true,
+            onTap: () => _release(context, ref),
+          ),
+        ]);
       case UnitStatus.work || UnitStatus.hold || UnitStatus.design:
         // Другой сотрудник: имя видно, клиент не раскрывается.
         buttons.addAll([
@@ -460,17 +460,40 @@ class _Actions extends ConsumerWidget {
     final pick = await pickClient(context);
     if (pick == null || !context.mounted) return;
 
+    // Бронь на диапазон дат «с какой по какую» (FR-07.6).
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final range = await showDateRangePicker(
+      context: context,
+      firstDate: today,
+      lastDate: today.add(const Duration(days: 365)),
+      initialDateRange: DateTimeRange(
+        start: today,
+        end: today.add(AppConfig.bookingDuration),
+      ),
+      helpText: 'Период брони',
+      saveText: 'Забронировать',
+      fieldStartHintText: 'Дата с',
+      fieldEndHintText: 'Дата по',
+    );
+    if (range == null || !context.mounted) return;
+
     final messenger = ScaffoldMessenger.of(context);
     try {
-      await ref
-          .read(panoramaRepositoryProvider)
-          .book(unitId: unit.id, manager: manager, client: pick.client);
+      await ref.read(panoramaRepositoryProvider).book(
+            unitId: unit.id,
+            manager: manager,
+            client: pick.client,
+            from: range.start,
+            until: range.end,
+          );
       ref.invalidate(dealsProvider);
       if (context.mounted) Navigator.of(context).pop();
       _snack(
         messenger,
         'Бронь оформлена',
-        'Кв. №${unit.number} держится 3 дня. Офис уведомлён.',
+        'Кв. №${unit.number} · ${TimeFormat.range(range.start, range.end)}. '
+            'Офис уведомлён.',
       );
     } on LimitExceeded catch (e) {
       _snack(messenger, 'Лимит достигнут', e.message);

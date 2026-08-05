@@ -19,6 +19,20 @@
 BEGIN;
 
 -- =============================================================================
+-- 0. Компании (мультитенант). У каждой компании свой ID; данные разных
+--    компаний не пересекаются — изоляция обеспечивается колонкой company_id
+--    во всех прикладных таблицах и фильтрацией по компании вошедшего.
+-- =============================================================================
+
+CREATE TABLE companies (
+    id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    name        text NOT NULL,
+    created_at  timestamptz NOT NULL DEFAULT now(),
+    updated_at  timestamptz NOT NULL DEFAULT now(),
+    deleted_at  timestamptz
+);
+
+-- =============================================================================
 -- 1. Пользователи и доступ
 -- =============================================================================
 
@@ -29,6 +43,7 @@ CREATE TABLE roles (
 
 CREATE TABLE users (
     id                    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    company_id            uuid NOT NULL REFERENCES companies(id) ON DELETE RESTRICT,
     full_name             text NOT NULL,
     login                 text NOT NULL,
     phone                 text NOT NULL,
@@ -43,9 +58,11 @@ CREATE TABLE users (
     version               integer NOT NULL DEFAULT 1
 );
 
--- Логин и телефон уникальны среди «живых» записей (мягкое удаление не ломает).
-CREATE UNIQUE INDEX users_login_uniq ON users (lower(login)) WHERE deleted_at IS NULL;
-CREATE UNIQUE INDEX users_phone_uniq ON users (phone)        WHERE deleted_at IS NULL;
+-- Логин и телефон уникальны В ПРЕДЕЛАХ КОМПАНИИ среди «живых» записей
+-- (в разных компаниях логин 'admin' может повторяться).
+CREATE UNIQUE INDEX users_login_uniq ON users (company_id, lower(login)) WHERE deleted_at IS NULL;
+CREATE UNIQUE INDEX users_phone_uniq ON users (company_id, phone)        WHERE deleted_at IS NULL;
+CREATE INDEX users_company_idx ON users (company_id) WHERE deleted_at IS NULL;
 
 CREATE TABLE user_roles (
     user_id   uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
@@ -66,6 +83,7 @@ CREATE INDEX sessions_user_idx ON sessions (user_id) WHERE revoked_at IS NULL;
 
 CREATE TABLE devices (
     id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    company_id  uuid NOT NULL REFERENCES companies(id) ON DELETE RESTRICT,
     user_id     uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
     platform    text NOT NULL CHECK (platform IN ('ios', 'android', 'web')),
     push_token  text NOT NULL,               -- FCM / APNs
@@ -80,6 +98,7 @@ CREATE UNIQUE INDEX devices_token_uniq ON devices (push_token);
 
 CREATE TABLE complexes (
     id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    company_id  uuid NOT NULL REFERENCES companies(id) ON DELETE RESTRICT,
     name        text NOT NULL,
     address     text NOT NULL,
     deadline    text,                         -- «сдача 2 кв. 2027» / «сдан»
@@ -93,9 +112,11 @@ CREATE TABLE complexes (
     updated_by  uuid REFERENCES users(id) ON DELETE RESTRICT,
     version     integer NOT NULL DEFAULT 1
 );
+CREATE INDEX complexes_company_idx ON complexes (company_id) WHERE deleted_at IS NULL;
 
 CREATE TABLE blocks (
     id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    company_id      uuid NOT NULL REFERENCES companies(id) ON DELETE RESTRICT,
     complex_id      uuid NOT NULL REFERENCES complexes(id) ON DELETE RESTRICT,
     name            text NOT NULL,
     floors          integer NOT NULL CHECK (floors > 0),
@@ -112,6 +133,7 @@ CREATE UNIQUE INDEX blocks_name_uniq
 
 CREATE TABLE clients (
     id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    company_id      uuid NOT NULL REFERENCES companies(id) ON DELETE RESTRICT,
     full_name       text NOT NULL,
     phone           text NOT NULL,
     seller_id       uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
@@ -137,6 +159,7 @@ CREATE INDEX clients_seller_idx ON clients (seller_id) WHERE deleted_at IS NULL;
 
 CREATE TABLE apartments (
     id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    company_id   uuid NOT NULL REFERENCES companies(id) ON DELETE RESTRICT,
     block_id     uuid NOT NULL REFERENCES blocks(id) ON DELETE RESTRICT,
     complex_id   uuid NOT NULL REFERENCES complexes(id) ON DELETE RESTRICT,
     floor        integer NOT NULL CHECK (floor > 0),   -- этаж — атрибут квартиры
@@ -144,6 +167,7 @@ CREATE TABLE apartments (
     number       integer NOT NULL,                     -- сквозной номер в блоке
     rooms        integer NOT NULL,                     -- 0 — студия
     area         numeric(6,1) NOT NULL,                -- площадь, м² (НЕ деньги)
+    is_penthouse boolean NOT NULL DEFAULT false,       -- тип «пентхаус»
     status       text NOT NULL DEFAULT 'free'
                     CHECK (status IN ('free','work','hold',
                                       'design','sold','off_market')),
@@ -153,6 +177,7 @@ CREATE TABLE apartments (
     bathrooms    integer NOT NULL DEFAULT 1,
     -- текущий держатель (денормализация активной брони/показа для скорости)
     held_by_id   uuid REFERENCES users(id) ON DELETE RESTRICT,
+    held_from    timestamptz,                          -- начало брони (диапазон дат)
     held_until   timestamptz,
     client_id    uuid REFERENCES clients(id) ON DELETE RESTRICT,
     created_at   timestamptz NOT NULL DEFAULT now(),
@@ -168,6 +193,7 @@ CREATE UNIQUE INDEX apartments_number_uniq
 -- Рабочие индексы (ТЗ 4).
 CREATE INDEX apartments_grid_idx   ON apartments (block_id, floor, position);
 CREATE INDEX apartments_status_idx ON apartments (status);
+CREATE INDEX apartments_company_idx ON apartments (company_id) WHERE deleted_at IS NULL;
 CREATE INDEX apartments_held_idx   ON apartments (held_by_id) WHERE held_by_id IS NOT NULL;
 
 CREATE TABLE apartment_status_history (
@@ -203,6 +229,7 @@ CREATE TABLE files (
 
 CREATE TABLE deals (
     id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    company_id     uuid NOT NULL REFERENCES companies(id) ON DELETE RESTRICT,
     client_id      uuid NOT NULL REFERENCES clients(id) ON DELETE RESTRICT,
     apartment_id   uuid NOT NULL REFERENCES apartments(id) ON DELETE RESTRICT,
     seller_id      uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
@@ -260,6 +287,7 @@ CREATE UNIQUE INDEX reservations_active_uniq
 
 CREATE TABLE notifications (
     id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    company_id    uuid NOT NULL REFERENCES companies(id) ON DELETE RESTRICT,
     recipient_id  uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
     kind          text NOT NULL,               -- booked / expiring / released / ...
     title         text NOT NULL,
@@ -303,6 +331,7 @@ CREATE UNIQUE INDEX bulk_idempotency_uniq ON bulk_operations (idempotency_key);
 
 CREATE TABLE audit_logs (
     id           bigserial PRIMARY KEY,
+    company_id   uuid REFERENCES companies(id) ON DELETE RESTRICT,
     user_id      uuid REFERENCES users(id) ON DELETE RESTRICT,
     action       text NOT NULL,               -- Вход / Бронь / Изменение статуса / ...
     entity_type  text,

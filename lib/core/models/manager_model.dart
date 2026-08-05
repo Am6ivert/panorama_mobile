@@ -15,6 +15,8 @@ class ManagerModel {
     this.role = UserRole.manager,
     this.blocked = false,
     this.mustChangePassword = false,
+    this.companyId = '',
+    this.companyName = '',
   });
 
   final String id;
@@ -24,6 +26,11 @@ class ManagerModel {
   final String login;
   final String phone;
   final UserRole role;
+
+  /// Компания-арендатор (мультитенант): у каждой компании свой ID, данные
+  /// разных компаний не пересекаются (изоляция).
+  final String companyId;
+  final String companyName;
 
   /// Учётная запись заблокирована администратором (FR-01.5).
   final bool blocked;
@@ -57,6 +64,8 @@ class ManagerModel {
     UserRole? role,
     bool? blocked,
     bool? mustChangePassword,
+    String? companyId,
+    String? companyName,
   }) => ManagerModel(
     id: id,
     name: name ?? this.name,
@@ -65,6 +74,8 @@ class ManagerModel {
     role: role ?? this.role,
     blocked: blocked ?? this.blocked,
     mustChangePassword: mustChangePassword ?? this.mustChangePassword,
+    companyId: companyId ?? this.companyId,
+    companyName: companyName ?? this.companyName,
   );
 
   factory ManagerModel.fromJson(Map<String, dynamic> json) => ManagerModel(
@@ -75,6 +86,8 @@ class ManagerModel {
     role: UserRole.fromWire(json['role'] as String?),
     blocked: json['blocked'] as bool? ?? false,
     mustChangePassword: json['must_change_password'] as bool? ?? false,
+    companyId: json['company_id'] as String? ?? '',
+    companyName: json['company_name'] as String? ?? '',
   );
 
   Map<String, dynamic> toJson() => {
@@ -85,5 +98,7 @@ class ManagerModel {
     'role': role.wire,
     'blocked': blocked,
     'must_change_password': mustChangePassword,
+    'company_id': companyId,
+    'company_name': companyName,
   };
 }

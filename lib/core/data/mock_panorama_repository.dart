@@ -13,6 +13,7 @@ import '../models/unit_event.dart';
 import '../models/unit_model.dart';
 import '../models/unit_status.dart';
 import '../models/user_role.dart';
+import '../utils/time_format.dart';
 import 'panorama_repository.dart';
 
 /// Демо-данные до подключения API Panorama. Без денежных значений (ТЗ 1.3).
@@ -590,6 +591,8 @@ class MockPanoramaRepository implements PanoramaRepository {
     required String unitId,
     required ManagerModel manager,
     ClientModel? client,
+    DateTime? from,
+    DateTime? until,
   }) async {
     _ensureUnderLimit(
       manager,
@@ -597,14 +600,18 @@ class MockPanoramaRepository implements PanoramaRepository {
       AppConfig.bookingLimitPerManager,
       'активных броней',
     );
+    final start = from ?? DateTime.now();
+    final end = until ?? start.add(AppConfig.bookingDuration);
+    final period = TimeFormat.range(start, end);
     final unit = await _apply(
       unitId,
       status: UnitStatus.hold,
       manager: manager,
       client: client,
-      until: DateTime.now().add(AppConfig.bookingDuration),
+      from: start,
+      until: end,
       event: UnitEventKind.booked,
-      title: client == null ? 'Бронь на 3 дня' : 'Бронь на 3 дня — ${client.name}',
+      title: client == null ? 'Бронь $period' : 'Бронь $period — ${client.name}',
       action: 'Бронирование',
     );
     if (client != null) _ensureDeal(unit, manager, client, DealStage.booking);
@@ -883,6 +890,7 @@ class MockPanoramaRepository implements PanoramaRepository {
     required UnitEventKind event,
     required String title,
     required String action,
+    DateTime? from,
     ClientModel? client,
     bool keepClient = false,
   }) async {
@@ -893,6 +901,7 @@ class MockPanoramaRepository implements PanoramaRepository {
       status: status,
       heldById: manager.id,
       heldByName: manager.shortName,
+      heldFrom: from,
       heldUntil: until,
       clientId: keepClient ? unit.clientId : client?.id,
       clientName: keepClient ? unit.clientName : client?.name,
@@ -1043,7 +1052,7 @@ class MockPanoramaRepository implements PanoramaRepository {
       '${u.complexName} · ${u.block} · №${u.number}';
 
   Future<void> _latency() =>
-      Future<void>.delayed(const Duration(milliseconds: 160));
+      Future<void>.delayed(const Duration(milliseconds: 40));
 
   String _digits(String phone) => phone.replaceAll(RegExp(r'[^0-9]'), '');
 

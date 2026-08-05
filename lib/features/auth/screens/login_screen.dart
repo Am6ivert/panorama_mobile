@@ -61,7 +61,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               const SizedBox(height: 8),
               _Input(
                 controller: _login,
-                hint: 'например, azamat',
+                hint: 'Ваш логин',
                 keyboardType: TextInputType.text,
                 inputFormatters: [
                   FilteringTextInputFormatter.deny(RegExp(r'\s')),

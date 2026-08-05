@@ -1,6 +1,7 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/router/app_router.dart';
@@ -32,6 +33,14 @@ class PanoramaApp extends StatelessWidget {
     title: 'Panorama',
     debugShowCheckedModeBanner: false,
     theme: AppTheme.light,
+    // Русская локализация — календарь брони, диалоги и т.п. на русском.
+    locale: const Locale('ru'),
+    supportedLocales: const [Locale('ru'), Locale('en')],
+    localizationsDelegates: const [
+      GlobalMaterialLocalizations.delegate,
+      GlobalWidgetsLocalizations.delegate,
+      GlobalCupertinoLocalizations.delegate,
+    ],
     initialRoute: AppRoutes.login,
     onGenerateRoute: AppRouter.onGenerateRoute,
   );

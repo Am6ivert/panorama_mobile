@@ -38,16 +38,27 @@ INSERT INTO settings (key, value) VALUES
     ('min_client_version',    '1.0.0')-- принудительное обновление клиента
 ON CONFLICT (key) DO NOTHING;
 
+-- Компания (мультитенант) — демо-арендатор. У каждой компании свой ID;
+-- все данные ниже принадлежат этой компании и изолированы от других.
+INSERT INTO companies (name)
+SELECT 'Панорама'
+WHERE NOT EXISTS (SELECT 1 FROM companies WHERE name = 'Панорама');
+
 -- Пользователи (пароль 0000, хеш bcrypt через pgcrypto) ----------------------
 -- Администратор должен создать реальные учётки и сменить пароли.
-WITH new_users AS (
-    INSERT INTO users (full_name, login, phone, password_hash, must_change_password)
-    VALUES
-      ('Динара Ибраимова',    'admin',  '+996 555 00-11-22', crypt('0000', gen_salt('bf')), false),
-      ('Азамат Кубанычбеков', 'azamat', '+996 555 10-22-30', crypt('0000', gen_salt('bf')), false),
-      ('Эльвира Садыкова',    'elvira', '+996 700 41-08-19', crypt('0000', gen_salt('bf')), false),
-      ('Нурлан Осмонов',      'nurlan', '+996 559 77-13-04', crypt('0000', gen_salt('bf')), false),
-      ('Бекзат Жумалиев',     'bekzat', '+996 772 60-55-21', crypt('0000', gen_salt('bf')), false)
+WITH co AS (
+    SELECT id FROM companies WHERE name = 'Панорама' LIMIT 1
+),
+new_users AS (
+    INSERT INTO users (company_id, full_name, login, phone, password_hash, must_change_password)
+    SELECT co.id, v.full_name, v.login, v.phone, crypt('0000', gen_salt('bf')), false
+    FROM co, (VALUES
+      ('Динара Ибраимова',    'admin',  '+996 555 00-11-22'),
+      ('Азамат Кубанычбеков', 'azamat', '+996 555 10-22-30'),
+      ('Эльвира Садыкова',    'elvira', '+996 700 41-08-19'),
+      ('Нурлан Осмонов',      'nurlan', '+996 559 77-13-04'),
+      ('Бекзат Жумалиев',     'bekzat', '+996 772 60-55-21')
+    ) AS v(full_name, login, phone)
     ON CONFLICT DO NOTHING
     RETURNING id, login
 )
@@ -57,23 +68,29 @@ FROM new_users;
 
 -- Пример объекта, блока и фонда квартир --------------------------------------
 -- Показывает генерацию как в мастере массового создания (FR-03).
-WITH admin AS (
-    SELECT id FROM users WHERE login = 'admin'
+WITH co AS (
+    SELECT id FROM companies WHERE name = 'Панорама' LIMIT 1
+),
+admin AS (
+    SELECT u.id, u.company_id FROM users u
+    JOIN co ON co.id = u.company_id
+    WHERE u.login = 'admin'
 ),
 cx AS (
-    INSERT INTO complexes (name, address, deadline, segment, created_by)
-    SELECT 'Панорама Сити', 'ул. Ахунбаева, 121', 'сдача 2 кв. 2027', 'бизнес', id
+    INSERT INTO complexes (company_id, name, address, deadline, segment, created_by)
+    SELECT admin.company_id, 'Панорама Сити', 'ул. Ахунбаева, 121', 'сдача 2 кв. 2027', 'бизнес', admin.id
     FROM admin
-    RETURNING id
+    RETURNING id, company_id
 ),
 bl AS (
-    INSERT INTO blocks (complex_id, name, floors, units_per_floor, created_by)
-    SELECT cx.id, 'А', 16, 6, admin.id FROM cx, admin
-    RETURNING id, complex_id
+    INSERT INTO blocks (company_id, complex_id, name, floors, units_per_floor, created_by)
+    SELECT cx.company_id, cx.id, 'А', 16, 6, admin.id FROM cx, admin
+    RETURNING id, complex_id, company_id
 )
 INSERT INTO apartments
-    (block_id, complex_id, floor, position, number, rooms, area, status, created_by)
+    (company_id, block_id, complex_id, floor, position, number, rooms, area, status, created_by)
 SELECT
+    bl.company_id,
     bl.id,
     bl.complex_id,
     f.floor,

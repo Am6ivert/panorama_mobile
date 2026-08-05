@@ -37,11 +37,12 @@ class _AddClientSheetState extends ConsumerState<AddClientSheet> {
 
   final _formKey = GlobalKey<FormState>();
   final _name = TextEditingController();
-  final _phone = TextEditingController(text: '+996 ');
+  final _phone = TextEditingController();
   final _request = TextEditingController();
 
   int _rooms = 2;
-  String _source = _sources.first;
+  // Источник необязателен и допускает несколько значений.
+  final Set<String> _selectedSources = {};
   bool _saving = false;
 
   @override
@@ -90,7 +91,7 @@ class _AddClientSheetState extends ConsumerState<AddClientSheet> {
               _Field(
                 controller: _phone,
                 label: 'Телефон',
-                hint: '+996 555 41-20-08',
+                hint: 'любой формат, напр. +996 555 12-34-56 или +7 900…',
                 keyboardType: TextInputType.phone,
                 inputFormatters: [
                   FilteringTextInputFormatter.allow(RegExp(r'[0-9+\-() ]')),
@@ -110,15 +111,22 @@ class _AddClientSheetState extends ConsumerState<AddClientSheet> {
                 onTap: (value) => setState(() => _rooms = value),
               ),
               const SizedBox(height: 18),
-              const Text('ИСТОЧНИК', style: AppTextStyles.section),
+              const Text(
+                'ИСТОЧНИК · необязательно, можно несколько',
+                style: AppTextStyles.section,
+              ),
               const SizedBox(height: 10),
               ChoiceChipBar<String>(
                 padding: EdgeInsets.zero,
                 options: [
                   for (final s in _sources) ChipOption(value: s, label: s),
                 ],
-                isSelected: (value) => value == _source,
-                onTap: (value) => setState(() => _source = value),
+                isSelected: (value) => _selectedSources.contains(value),
+                onTap: (value) => setState(() {
+                  _selectedSources.contains(value)
+                      ? _selectedSources.remove(value)
+                      : _selectedSources.add(value);
+                }),
               ),
               const SizedBox(height: 18),
               _Field(
@@ -152,7 +160,8 @@ class _AddClientSheetState extends ConsumerState<AddClientSheet> {
   String? _validatePhone(String? value) {
     final digits = (value ?? '').replaceAll(RegExp(r'[^0-9]'), '');
     if (digits.isEmpty) return 'Укажите телефон — по нему ищут клиента';
-    if (digits.length < 9) return 'Похоже, номер неполный';
+    // Допускаем любые номера, включая иностранные, поэтому проверка мягкая.
+    if (digits.length < 6) return 'Похоже, номер неполный';
     return null;
   }
 
@@ -170,7 +179,7 @@ class _AddClientSheetState extends ConsumerState<AddClientSheet> {
             phone: _phone.text.trim(),
             seller: seller,
             rooms: _rooms,
-            source: _source,
+            source: _selectedSources.join(', '),
             request: _request.text.trim(),
           );
       ref.invalidate(clientsProvider);

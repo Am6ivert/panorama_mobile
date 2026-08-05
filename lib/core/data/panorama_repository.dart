@@ -163,11 +163,15 @@ abstract interface class PanoramaRepository {
     ClientModel? client,
   });
 
-  /// Поставить бронь (срок по умолчанию 3 дня, FR-07.6). Клиент опционален.
+  /// Поставить бронь на диапазон дат (FR-07.6). [from]/[until] — период брони
+  /// «с какой по какую»; если не заданы — с сегодня на срок по умолчанию.
+  /// Клиент опционален.
   Future<UnitModel> book({
     required String unitId,
     required ManagerModel manager,
     ClientModel? client,
+    DateTime? from,
+    DateTime? until,
   });
 
   /// Вернуть квартиру в свободный фонд.
