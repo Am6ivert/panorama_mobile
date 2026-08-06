@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
+import '../../core/providers/data_providers.dart';
+import 'global_navigation.dart';
 
 /// Тёмная шапка экрана. Градиент — на верхнеуровневых вкладках,
 /// плоский цвет — на внутренних экранах с кнопкой «назад».
-class AppHeader extends StatelessWidget {
+class AppHeader extends ConsumerWidget {
   const AppHeader({
     super.key,
     required this.title,
@@ -13,6 +16,7 @@ class AppHeader extends StatelessWidget {
     this.onBack,
     this.trailing,
     this.bottom,
+    this.showNavigation = true,
   });
 
   final String title;
@@ -21,12 +25,17 @@ class AppHeader extends StatelessWidget {
   final VoidCallback? onBack;
   final Widget? trailing;
   final Widget? bottom;
+  final bool showNavigation;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final titleStyle = onBack == null
         ? AppTextStyles.onDarkTitle
         : AppTextStyles.onDarkTitle.copyWith(fontSize: 17);
+
+    final user = ref.watch(currentUserProvider);
+    final effectiveTrailing = trailing ??
+        (showNavigation && user != null ? const GlobalNavigation() : null);
 
     return Container(
       width: double.infinity,
@@ -67,7 +76,7 @@ class AppHeader extends StatelessWidget {
                   ],
                 ),
               ),
-              ?trailing,
+              if (effectiveTrailing != null) effectiveTrailing,
             ],
           ),
           if (bottom != null) ...[const SizedBox(height: 13), bottom!],

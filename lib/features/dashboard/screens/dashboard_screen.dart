@@ -6,11 +6,8 @@ import '../../../core/constants/app_text_styles.dart';
 import '../../../core/models/unit_model.dart';
 import '../../../core/models/unit_status.dart';
 import '../../../core/providers/data_providers.dart';
-import '../../../core/providers/ui_providers.dart';
-import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../shared/widgets/app_header.dart';
-import '../../../shared/widgets/initials_avatar.dart';
 import '../../../shared/widgets/section_title.dart';
 import '../../unit/widgets/unit_sheet.dart';
 
@@ -59,30 +56,6 @@ class DashboardScreen extends ConsumerWidget {
           subtitle: user == null
               ? 'Отдел продаж'
               : '${user.name} · ${user.role.label}',
-          trailing: user == null
-              ? null
-              : Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (isAdmin)
-                      _HeaderIcon(
-                        icon: Icons.admin_panel_settings_outlined,
-                        onTap: () =>
-                            Navigator.of(context).pushNamed(AppRoutes.admin),
-                      ),
-                    _HeaderIcon(
-                      icon: Icons.logout,
-                      onTap: () => _logout(context, ref),
-                    ),
-                    const SizedBox(width: 8),
-                    InitialsAvatar(
-                      initials: user.initials,
-                      color: user.color,
-                      size: 36,
-                      fontSize: 13,
-                    ),
-                  ],
-                ),
           bottom: const LiveIndicator(
             text: 'Онлайн · показатели фонда обновляются в реальном времени',
           ),
@@ -182,12 +155,6 @@ class DashboardScreen extends ConsumerWidget {
         showDragHandle: true,
         builder: (_) => UnitSheet(unitId: unitId),
       );
-
-  void _logout(BuildContext context, WidgetRef ref) {
-    ref.read(currentUserProvider.notifier).state = null;
-    ref.read(shellTabProvider.notifier).state = ShellTab.dashboard;
-    Navigator.of(context).pushNamedAndRemoveUntil(AppRoutes.login, (_) => false);
-  }
 }
 
 class _StatusGrid extends StatelessWidget {
@@ -336,25 +303,4 @@ class _AlertRow extends StatelessWidget {
       ),
     );
   }
-}
-
-class _HeaderIcon extends StatelessWidget {
-  const _HeaderIcon({required this.icon, required this.onTap});
-  final IconData icon;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) => GestureDetector(
-    onTap: onTap,
-    child: Container(
-      margin: const EdgeInsets.only(right: 8),
-      width: 36,
-      height: 36,
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.14),
-        borderRadius: BorderRadius.circular(11),
-      ),
-      child: Icon(icon, size: 18, color: Colors.white),
-    ),
-  );
 }
