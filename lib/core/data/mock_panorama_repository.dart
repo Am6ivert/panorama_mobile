@@ -346,6 +346,20 @@ class MockPanoramaRepository implements PanoramaRepository {
     return updated;
   }
 
+  @override
+  Future<ManagerModel> updateUserProfile({
+    required String userId,
+    required String name,
+    required String phone,
+  }) async {
+    await _latency();
+    final i = _users.indexWhere((u) => u.id == userId);
+    final updated = _users[i].copyWith(name: name, phone: phone);
+    _users[i] = updated;
+    _log(updated, 'Обновление профиля', updated.name);
+    return updated;
+  }
+
   // ===========================================================================
   // Недвижимость
   // ===========================================================================
