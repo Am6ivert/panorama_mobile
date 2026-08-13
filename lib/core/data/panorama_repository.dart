@@ -150,6 +150,13 @@ abstract interface class PanoramaRepository {
     required String newPassword,
   });
 
+  /// Обновление профиля пользователя (имя, телефон).
+  Future<ManagerModel> updateUserProfile({
+    required String userId,
+    required String name,
+    required String phone,
+  });
+
   // --- Недвижимость (FR-02) ---
 
   Future<List<ComplexModel>> fetchComplexes();

@@ -191,6 +191,21 @@ class ApiPanoramaRepository implements PanoramaRepository {
   );
 
   @override
+  Future<ManagerModel> updateUserProfile({
+    required String userId,
+    required String name,
+    required String phone,
+  }) async => ManagerModel.fromJson(
+    await _api.post(
+      '/users/$userId/profile',
+      body: {
+        'name': name,
+        'phone': phone,
+      },
+    ),
+  );
+
+  @override
   Future<List<ComplexModel>> fetchComplexes() async =>
       (await _api.getList('/complexes')).map(ComplexModel.fromJson).toList();
 

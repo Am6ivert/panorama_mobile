@@ -29,7 +29,7 @@ class PanoramaApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => MaterialApp(
-    title: 'Panorama',
+    title: 'Шахматка',
     debugShowCheckedModeBanner: false,
     theme: AppTheme.light,
     navigatorKey: AppRouter.navigatorKey,

@@ -46,7 +46,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             children: [
               const SizedBox(height: 56),
               const Text(
-                'Panorama',
+                'Шахматка',
                 style: TextStyle(
                   fontSize: 34,
                   fontWeight: FontWeight.w800,
