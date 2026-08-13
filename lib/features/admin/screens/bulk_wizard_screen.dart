@@ -349,6 +349,8 @@ class _GroupEditor extends StatelessWidget {
                 (2, '2-комнатная'),
                 (3, '3-комнатная'),
                 (4, '4-комнатная'),
+                (5, '5-комнатная'),
+                (6, '6-комнатная'),
               ])
                 ListTile(
                   title: Text(label),
@@ -431,7 +433,7 @@ class _GroupEditor extends StatelessWidget {
                 position: pos + 1,
                 rooms: group.template[pos],
                 onCycle: () {
-                  group.template[pos] = (group.template[pos] + 1) % 5;
+                  group.template[pos] = (group.template[pos] + 1) % 7;
                   onChanged();
                 },
                 onRemove: group.template.length > 1
@@ -462,7 +464,7 @@ class _GroupEditor extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         const Text(
-          'Нажмите на позицию, чтобы сменить комнатность (Ст → 1 → 2 → 3 → 4).',
+          'Нажмите на позицию, чтобы сменить комнатность (Ст → 1 → 2 → 3 → 4 → 5 → 6).',
           style: TextStyle(fontSize: 11, color: AppColors.ink3),
         ),
       ],
