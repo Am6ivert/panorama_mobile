@@ -20,8 +20,42 @@ Handler buildHandler(Db db, {Fcm? fcm, Api? api, bool log = true}) {
   return pipeline
       .addMiddleware(errorsMiddleware())
       .addMiddleware(authMiddleware(db))
+      .addMiddleware(subscriptionMiddleware())
       .addHandler(application.handler);
 }
+
+/// Подписка компании: после истечения остаётся только просмотр.
+///
+/// Правило простое: читать (GET) можно всегда, менять (POST) — только пока
+/// подписка действует. Так отдел продаж не теряет доступ к своим данным и
+/// видит, что именно нужно продлить, а не упирается в пустой экран.
+///
+/// Исключения:
+///   * суперадминистратор — управляет подписками, ограничение на него не
+///     распространяется;
+///   * выход из приложения — работает всегда, иначе пользователь застрянет
+///     в чужой сессии;
+///   * смена собственного пароля — вопрос безопасности, а не подписки.
+Middleware subscriptionMiddleware() => (Handler inner) => (Request req) async {
+      final auth = req.context[authContextKey];
+      if (auth is! AuthContext) return inner(req); // публичные маршруты
+      if (auth.isSuperadmin) return inner(req);
+      if (req.method != 'POST') return inner(req);
+
+      final path = req.requestedUri.path;
+      if (path == '/api/v1/auth/logout') return inner(req);
+      if (path == '/api/v1/users/${auth.userId}/password') return inner(req);
+
+      if (auth.access == OrgAccess.full) return inner(req);
+
+      return jsonError(
+        402,
+        auth.access == OrgAccess.blocked
+            ? 'Доступ приостановлен. Свяжитесь с нами, чтобы возобновить работу.'
+            : 'Подписка истекла — доступен только просмотр. '
+                'Свяжитесь с нами, чтобы продлить.',
+      );
+    };
 
 /// Единая обработка исключений.
 ///

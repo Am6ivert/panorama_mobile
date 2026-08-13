@@ -35,16 +35,37 @@ $psql = Find-Psql
 Write-Host "psql: $psql" -ForegroundColor Cyan
 $env:PGPASSWORD = $Password
 
-& $psql -U $User -h $DbHost -d $Database -v ON_ERROR_STOP=1 `
-        -v "code=$Code" `
-        -v "name=$Name" `
-        -v "admin_name=$AdminName" `
-        -v "admin_login=$AdminLogin" `
-        -v "admin_phone=$AdminPhone" `
-        -f (Join-Path $dbDir 'new_org.sql')
+# Значения передаём НЕ аргументами -v, а временным файлом в UTF-8.
+#
+# Windows PowerShell 5.1 кодирует аргументы внешних программ в ANSI, а psql у
+# нас работает в UTF-8: латиница проходила, а кириллица превращалась в
+# "неверный многобайтный символ", и переменная просто не устанавливалась.
+# Файлы psql читает в кодировке PGCLIENTENCODING, поэтому здесь всё корректно.
+function Esc([string]$v) { return $v -replace "'", "\'" }
 
-$code = $LASTEXITCODE
-$env:PGPASSWORD = $null
+$varsFile = Join-Path ([System.IO.Path]::GetTempPath()) "panorama_new_org_$PID.sql"
+$vars = @(
+  "\set code '$(Esc $Code)'",
+  "\set name '$(Esc $Name)'",
+  "\set admin_name '$(Esc $AdminName)'",
+  "\set admin_login '$(Esc $AdminLogin)'",
+  "\set admin_phone '$(Esc $AdminPhone)'"
+) -join "`n"
+
+# Без BOM: psql принимает его за часть первой команды.
+[System.IO.File]::WriteAllText($varsFile, $vars + "`n",
+                               (New-Object System.Text.UTF8Encoding $false))
+
+try {
+  & $psql -U $User -h $DbHost -d $Database -v ON_ERROR_STOP=1 `
+          -f $varsFile `
+          -f (Join-Path $dbDir 'new_org.sql')
+  $code = $LASTEXITCODE
+} finally {
+  Remove-Item $varsFile -ErrorAction SilentlyContinue
+  $env:PGPASSWORD = $null
+}
+
 if ($code -ne 0) { throw "Компанию завести не удалось - см. сообщение выше." }
 
 Write-Host "`nГотово. Вход: логин '$AdminLogin', пароль '0000' (приложение попросит сменить)." -ForegroundColor Green

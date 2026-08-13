@@ -8,12 +8,20 @@ BEGIN;
 -- Роли -----------------------------------------------------------------------
 -- Компания по умолчанию ------------------------------------------------------
 -- Демо-данные ниже принадлежат ей. Вторую компанию заводит db/new_org.sql.
-INSERT INTO organizations (code, name) VALUES ('panorama', 'Панорама')
+INSERT INTO organizations (code, name, plan_kind, plan_until, grace_days)
+VALUES ('panorama', 'Панорама', 'paid', now() + interval '1 month', 3)
+ON CONFLICT DO NOTHING;
+
+-- Служебная компания: в ней живёт суперадминистратор. Своих объектов и
+-- сотрудников у неё нет, подписка бессрочная.
+INSERT INTO organizations (code, name, plan_kind, plan_until, grace_days)
+VALUES ('system', 'Служебная', 'paid', now() + interval '100 years', 0)
 ON CONFLICT DO NOTHING;
 
 INSERT INTO roles (code, title) VALUES
-    ('manager', 'Менеджер'),
-    ('admin',   'Администратор')
+    ('manager',    'Менеджер'),
+    ('admin',      'Администратор'),
+    ('superadmin', 'Суперадминистратор')
 ON CONFLICT (code) DO NOTHING;
 
 -- Справочники (статусы — text + CHECK в таблицах, тут — витрина для UI) -------

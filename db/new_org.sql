@@ -83,8 +83,10 @@ END $$;
 
 -- Компания + её первый администратор ------------------------------------------
 WITH org AS (
-    INSERT INTO organizations (code, name)
-    VALUES (lower(:'code'), :'name')
+    -- Пробный период: 3 дня без льготных дней. Дальше компания переходит в
+    -- режим «только чтение», пока суперадминистратор не выдаст подписку.
+    INSERT INTO organizations (code, name, plan_kind, plan_until, grace_days)
+    VALUES (lower(:'code'), :'name', 'trial', now() + interval '3 days', 0)
     RETURNING id
 ), admin AS (
     INSERT INTO users (org_id, full_name, login, phone,
@@ -96,6 +98,13 @@ WITH org AS (
 )
 INSERT INTO user_roles (user_id, role_code)
 SELECT id, 'admin' FROM admin;
+
+-- Журнал подписок: пробный период тоже фиксируем, чтобы у суперадминистратора
+-- была полная история по компании.
+INSERT INTO subscriptions (org_id, kind, ends_at, note)
+SELECT o.id, 'trial', o.plan_until, 'Пробный период при создании компании'
+FROM organizations o
+WHERE lower(o.code) = lower(:'code');
 
 -- Настройки компании: без них сервер возьмёт значения по умолчанию из кода,
 -- но администратору удобнее иметь строки, которые можно поправить.
@@ -119,7 +128,8 @@ COMMIT;
 SELECT o.code   AS "код компании",
        o.name   AS "название",
        u.login  AS "логин администратора",
-       '0000'   AS "временный пароль"
+       '0000'   AS "временный пароль",
+       to_char(o.plan_until, 'DD.MM.YYYY HH24:MI') AS "пробный период до"
 FROM organizations o
 JOIN users u ON u.org_id = o.id
 WHERE lower(o.code) = lower(:'code');

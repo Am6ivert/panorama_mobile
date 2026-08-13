@@ -51,6 +51,9 @@ class GlobalNavigation extends ConsumerWidget {
   void _logout(BuildContext context, WidgetRef ref) {
     // Отзываем токен на сервере, ответ не ждём — экран входа открываем сразу.
     unawaited(ref.read(panoramaRepositoryProvider).logout());
+    // Без этого данные компании останутся в кэше и достанутся следующему
+    // вошедшему — в том числе админу другой компании.
+    resetCompanyData(ref.invalidate);
     ref.read(currentUserProvider.notifier).state = null;
     Navigator.of(context).pushNamedAndRemoveUntil(
       AppRoutes.login,

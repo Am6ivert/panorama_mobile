@@ -190,6 +190,42 @@ Future<String> createComplexWithUnits(TestApi api, TestOrg org,
   return complexId;
 }
 
+/// Меняет срок подписки компании напрямую в базе.
+///
+/// [days] может быть отрицательным — так проверяется истёкшая подписка.
+Future<void> setPlan(TestApi api, TestOrg org,
+    {required int days, int graceDays = 3, bool blocked = false}) async {
+  await api.db.query(
+    '''UPDATE organizations
+       SET plan_until = now() + make_interval(days => @d),
+           grace_days = @g, is_blocked = @b, plan_kind = 'paid'
+       WHERE id = @id''',
+    {'d': days, 'g': graceDays, 'b': blocked, 'id': org.id},
+  );
+}
+
+/// Создаёт суперадминистратора в служебной компании и входит им.
+Future<({String id, String login, String token})> createSuperadmin(
+    TestApi api) async {
+  final tag = 'su${uniqueSuffix()}';
+  final row = await api.db.one(
+    '''WITH su AS (
+         INSERT INTO users (org_id, full_name, login, phone,
+                            password_hash, must_change_password)
+         SELECT o.id, 'Тест супер', @login, @phone,
+                crypt(@pass, gen_salt('bf')), false
+         FROM organizations o WHERE o.code = 'system'
+         RETURNING id
+       ), ur AS (
+         INSERT INTO user_roles (user_id, role_code)
+         SELECT id, 'superadmin' FROM su RETURNING user_id
+       )
+       SELECT id::text AS id FROM su''',
+    {'login': tag, 'phone': '+996 $tag', 'pass': testPassword},
+  );
+  return (id: row!['id'] as String, login: tag, token: await login(api, tag));
+}
+
 /// Список квартир компании.
 Future<List<Map<String, dynamic>>> units(TestApi api, String token) async =>
     (await api.get('/api/v1/units', token: token)).list;
