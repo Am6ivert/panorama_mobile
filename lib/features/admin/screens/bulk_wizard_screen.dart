@@ -305,6 +305,46 @@ class _GroupEditor extends StatelessWidget {
   final VoidCallback onChanged;
   final VoidCallback onRemove;
 
+  void _showRoomsPicker(BuildContext context, ValueChanged<int> onPick) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Выберите комнатность',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.ink,
+                ),
+              ),
+              const SizedBox(height: 16),
+              for (final (rooms, label) in [
+                (0, 'Студия'),
+                (1, '1-комнатная'),
+                (2, '2-комнатная'),
+                (3, '3-комнатная'),
+                (4, '4-комнатная'),
+              ])
+                ListTile(
+                  title: Text(label),
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    onPick(rooms);
+                  },
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) => Container(
     margin: const EdgeInsets.only(bottom: 10),
@@ -383,10 +423,10 @@ class _GroupEditor extends StatelessWidget {
                     : null,
               ),
             GestureDetector(
-              onTap: () {
-                group.template.add(group.template.isEmpty ? 1 : group.template.last);
+              onTap: () => _showRoomsPicker(context, (rooms) {
+                group.template.add(rooms);
                 onChanged();
-              },
+              }),
               child: Container(
                 width: 46,
                 height: 46,
