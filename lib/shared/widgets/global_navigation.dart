@@ -24,11 +24,11 @@ class GlobalNavigation extends ConsumerWidget {
         if (isAdmin)
           _HeaderIcon(
             icon: Icons.admin_panel_settings_outlined,
-            onTap: () => Navigator.of(context).pushNamed(AppRoutes.admin),
+            onTap: () => _navigateTo(context, AppRoutes.admin),
           ),
         _HeaderIcon(
           icon: Icons.person_outline,
-          onTap: () => Navigator.of(context).pushNamed(AppRoutes.profile),
+          onTap: () => _navigateTo(context, AppRoutes.profile),
         ),
         _HeaderIcon(
           icon: Icons.logout,
@@ -36,7 +36,7 @@ class GlobalNavigation extends ConsumerWidget {
         ),
         const SizedBox(width: 8),
         GestureDetector(
-          onTap: () => Navigator.of(context).pushNamed(AppRoutes.profile),
+          onTap: () => _navigateTo(context, AppRoutes.profile),
           child: InitialsAvatar(
             initials: user.initials,
             color: user.color,
@@ -46,6 +46,12 @@ class GlobalNavigation extends ConsumerWidget {
         ),
       ],
     );
+  }
+
+  void _navigateTo(BuildContext context, String route) {
+    final currentRoute = ModalRoute.of(context)?.settings.name;
+    if (currentRoute == route) return; // уже на этом экране
+    Navigator.of(context).pushNamed(route);
   }
 
   void _logout(BuildContext context, WidgetRef ref) {
