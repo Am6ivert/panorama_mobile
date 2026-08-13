@@ -9,6 +9,8 @@ import '../models/complex_model.dart';
 import '../models/deal_model.dart';
 import '../models/deal_stage.dart';
 import '../models/manager_model.dart';
+import '../models/org_summary.dart';
+import '../models/subscription.dart';
 import '../models/unit_event.dart';
 import '../models/unit_model.dart';
 import '../models/unit_status.dart';
@@ -251,6 +253,50 @@ class MockPanoramaRepository implements PanoramaRepository {
 
   @override
   Future<void> logout() async {}
+
+  // Панель суперадминистратора на моках не работает: это режим для одного
+  // человека, и подделывать список чужих компаний смысла нет.
+  @override
+  Future<LoginResult> register({
+    required String name,
+    required String company,
+    required String phone,
+    required String login,
+    required String password,
+  }) async {
+    await _latency();
+    if (_users.any((u) => u.login.toLowerCase() == login.toLowerCase())) {
+      return const LoginFailed('Такой логин уже занят - придумайте другой');
+    }
+    final admin = ManagerModel(
+      id: 'u${_users.length + 1}',
+      name: name,
+      login: login,
+      phone: phone,
+      role: UserRole.admin,
+    );
+    _users.add(admin);
+    return LoginOk(admin);
+  }
+
+  @override
+  Future<Subscription?> fetchSubscription() async => null;
+
+  @override
+  Future<List<OrgSummary>> fetchOrgs() async => const [];
+
+  @override
+  Future<void> subscribeOrg({
+    required String orgId,
+    required int months,
+    String? note,
+  }) async {}
+
+  @override
+  Future<void> setOrgBlocked({
+    required String orgId,
+    required bool blocked,
+  }) async {}
 
   @override
   Future<ManagerModel?> restoreSession() async => null;

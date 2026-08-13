@@ -27,8 +27,11 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
     final user = await ref.read(panoramaRepositoryProvider).restoreSession();
     if (!mounted) return;
     if (user != null) {
+      resetCompanyData(ref.invalidate);
       ref.read(currentUserProvider.notifier).state = user;
-      Navigator.of(context).pushReplacementNamed(AppRoutes.home);
+      Navigator.of(context).pushReplacementNamed(
+        user.isSuperadmin ? AppRoutes.superadmin : AppRoutes.home,
+      );
     } else {
       Navigator.of(context).pushReplacementNamed(AppRoutes.login);
     }

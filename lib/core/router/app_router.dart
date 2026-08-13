@@ -6,7 +6,9 @@ import '../../features/admin/screens/bulk_wizard_screen.dart';
 import '../../features/admin/screens/table_editor_screen.dart';
 import '../../features/admin/screens/users_screen.dart';
 import '../../features/auth/screens/login_screen.dart';
+import '../../features/auth/screens/register_screen.dart';
 import '../../features/auth/screens/splash_screen.dart';
+import '../../features/superadmin/screens/superadmin_screen.dart';
 import '../../features/board/screens/board_screen.dart';
 import '../../features/profile/screens/profile_screen.dart';
 import '../../features/search/screens/search_screen.dart';
@@ -25,6 +27,13 @@ abstract final class AppRoutes {
   static const users = '/admin/users';
   static const audit = '/admin/audit';
   static const profile = '/profile';
+
+  /// Регистрация застройщика: компания и её первый администратор.
+  static const register = '/register';
+
+  /// Панель суперадминистратора: компании и подписки. Отдельный экран, а не
+  /// вкладка — у него нет ни объектов, ни фонда, ни клиентов.
+  static const superadmin = '/superadmin';
 }
 
 /// Аргумент для табличного редактора.
@@ -53,6 +62,8 @@ abstract final class AppRouter {
       AppRoutes.users => _slide(const UsersScreen()),
       AppRoutes.audit => _slide(const AuditScreen()),
       AppRoutes.profile => _slide(const ProfileScreen()),
+      AppRoutes.register => _slide(const RegisterScreen()),
+      AppRoutes.superadmin => _fade(const SuperadminScreen()),
       AppRoutes.tableEditor => _slide(
         TableEditorScreen(args: settings.arguments as EditorArgs),
       ),

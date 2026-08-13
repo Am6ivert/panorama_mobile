@@ -10,8 +10,10 @@ import '../../../core/providers/data_providers.dart';
 import '../../../core/router/app_router.dart';
 import '../../../core/utils/api_action.dart';
 
-/// Вход по логину и паролю (FR-01.1). Экрана регистрации нет —
-/// учётные записи создаёт администратор.
+/// Вход по логину и паролю (FR-01.1).
+///
+/// Отсюда же начинается регистрация: застройщик заводит компанию сам, а
+/// менеджеров внутри неё создаёт уже её администратор.
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
 
@@ -124,6 +126,28 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 ),
                 child: const Text('Забыли пароль?'),
               ),
+              const SizedBox(height: 18),
+              Divider(color: Colors.white.withValues(alpha: 0.12), height: 1),
+              const SizedBox(height: 18),
+              const Center(
+                child: Text(
+                  'Впервые здесь?',
+                  style: TextStyle(fontSize: 13, color: AppColors.onDarkSub),
+                ),
+              ),
+              const SizedBox(height: 10),
+              OutlinedButton(
+                onPressed: _loading
+                    ? null
+                    : () => Navigator.of(context)
+                        .pushNamed(AppRoutes.register),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size.fromHeight(50),
+                  foregroundColor: Colors.white,
+                  side: BorderSide(color: Colors.white.withValues(alpha: 0.35)),
+                ),
+                child: const Text('Зарегистрироваться'),
+              ),
               const SizedBox(height: 24),
             ],
           ),
@@ -152,8 +176,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             ? await _forceChangePassword(user)
             : user;
         if (effective == null || !mounted) return;
+        // Чужие данные из прошлой сессии не должны пережить смену входа.
+        resetCompanyData(ref.invalidate);
         ref.read(currentUserProvider.notifier).state = effective;
-        Navigator.of(context).pushReplacementNamed(AppRoutes.home);
+        // Суперадминистратору шахматка и клиенты не нужны — у него своя панель.
+        Navigator.of(context).pushReplacementNamed(
+          effective.isSuperadmin ? AppRoutes.superadmin : AppRoutes.home,
+        );
       case LoginFailed(:final message):
         setState(() {
           _loading = false;

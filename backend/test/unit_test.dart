@@ -95,7 +95,8 @@ void main() {
   });
 
   group('AuthContext', () {
-    AuthContext ctx(String role) => AuthContext(
+    AuthContext ctx(String role, {OrgAccess access = OrgAccess.full}) =>
+        AuthContext(
           sessionId: 's',
           userId: 'u',
           name: 'n',
@@ -103,11 +104,28 @@ void main() {
           orgId: 'o',
           orgCode: 'c',
           orgName: 'N',
+          access: access,
+          planKind: 'paid',
         );
 
     test('роль admin даёт isAdmin', () {
       expect(ctx('admin').isAdmin, isTrue);
       expect(ctx('manager').isAdmin, isFalse);
+    });
+
+    test('суперадминистратор отличается от админа компании', () {
+      expect(ctx('superadmin').isSuperadmin, isTrue);
+      expect(ctx('admin').isSuperadmin, isFalse);
+      // Суперадмина не считаем админом компании: у него нет своего фонда.
+      expect(ctx('superadmin').isAdmin, isFalse);
+    });
+
+    test('полный доступ только при действующей подписке', () {
+      expect(ctx('admin').access, OrgAccess.full);
+      expect(ctx('admin', access: OrgAccess.readOnly).access,
+          OrgAccess.readOnly);
+      expect(OrgAccess.readOnly.wire, 'read_only');
+      expect(OrgAccess.blocked.wire, 'blocked');
     });
   });
 

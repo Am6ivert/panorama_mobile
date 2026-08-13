@@ -9,6 +9,30 @@ import 'json.dart';
 /// Ключ, под которым разрешённая личность лежит в `Request.context`.
 const authContextKey = 'panorama.auth';
 
+/// Что компании разрешено делать прямо сейчас.
+enum OrgAccess {
+  /// Подписка действует: доступно всё.
+  full,
+
+  /// Подписка истекла: данные видно, изменить ничего нельзя.
+  readOnly,
+
+  /// Компанию приостановил суперадминистратор.
+  blocked;
+
+  static OrgAccess fromWire(String? value) => switch (value) {
+        'full' => OrgAccess.full,
+        'blocked' => OrgAccess.blocked,
+        _ => OrgAccess.readOnly,
+      };
+
+  String get wire => switch (this) {
+        OrgAccess.full => 'full',
+        OrgAccess.readOnly => 'read_only',
+        OrgAccess.blocked => 'blocked',
+      };
+}
+
 /// Личность и роль автора запроса, вычисленные сервером по токену сессии.
 ///
 /// Единственный источник правды об «кто я» для всех хендлеров: тело запроса
@@ -23,6 +47,9 @@ class AuthContext {
     required this.orgId,
     required this.orgCode,
     required this.orgName,
+    required this.access,
+    required this.planKind,
+    this.planUntil,
   });
 
   final String sessionId;
@@ -36,7 +63,20 @@ class AuthContext {
   final String orgCode;
   final String orgName;
 
+  /// Состояние подписки компании на момент запроса.
+  final OrgAccess access;
+
+  /// 'trial' или 'paid' — нужен только для текста в приложении.
+  final String planKind;
+
+  /// До какой даты оплачено (ISO-8601, UTC). null — подписки не было.
+  final String? planUntil;
+
   bool get isAdmin => role == 'admin';
+
+  /// Суперадминистратор: видит все компании и управляет подписками.
+  /// Живёт в служебной компании, ограничения подписки на него не действуют.
+  bool get isSuperadmin => role == 'superadmin';
 }
 
 /// Хеш токена сессии: SHA-256 в hex.
@@ -61,7 +101,11 @@ String? bearerToken(Request request) {
 bool isPublicRoute(Request request) {
   if (request.method == 'OPTIONS') return true; // CORS preflight
   final path = request.requestedUri.path;
-  return path == '/api/v1/health' || path == '/api/v1/auth/login';
+  return path == '/api/v1/health' ||
+      path == '/api/v1/auth/login' ||
+      // Регистрация — единственный способ появиться в системе первому
+      // сотруднику компании, поэтому токена для неё быть не может.
+      path == '/api/v1/auth/register';
 }
 
 /// SQL разрешения токена в личность.
@@ -75,7 +119,19 @@ const _resolveSql = '''
          o.id::text        AS org_id,
          o.code            AS org_code,
          o.name            AS org_name,
+         o.plan_kind       AS plan_kind,
+         to_char(o.plan_until AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.USZ')
+                           AS plan_until,
+         -- Доступ полный, пока не истёк срок с учётом льготных дней.
+         CASE WHEN o.is_blocked THEN 'blocked'
+              WHEN o.plan_until IS NOT NULL
+               AND now() <= o.plan_until + make_interval(days => o.grace_days)
+              THEN 'full'
+              ELSE 'read_only' END AS access,
          CASE WHEN EXISTS (SELECT 1 FROM user_roles r
+                            WHERE r.user_id = u.id AND r.role_code = 'superadmin')
+              THEN 'superadmin'
+              WHEN EXISTS (SELECT 1 FROM user_roles r
                             WHERE r.user_id = u.id AND r.role_code = 'admin')
               THEN 'admin' ELSE 'manager' END AS role
   FROM sessions s
@@ -100,6 +156,9 @@ Future<AuthContext?> resolveToken(Db db, String token) async {
     orgId: row['org_id'] as String,
     orgCode: row['org_code'] as String,
     orgName: row['org_name'] as String,
+    access: OrgAccess.fromWire(row['access'] as String?),
+    planKind: row['plan_kind'] as String? ?? 'trial',
+    planUntil: row['plan_until'] as String?,
   );
 }
 

@@ -14,6 +14,7 @@ import '../../complexes/screens/complexes_screen.dart';
 import '../../dashboard/screens/dashboard_screen.dart';
 import '../../notifications/screens/notifications_screen.dart';
 import '../../registry/screens/registry_screen.dart';
+import '../../../shared/widgets/subscription_banner.dart';
 
 class HomeShell extends ConsumerStatefulWidget {
   const HomeShell({super.key});
@@ -91,7 +92,14 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     final unread = ref.watch(unreadCountProvider);
 
     return Scaffold(
-      body: IndexedStack(index: index, children: _tabs),
+      body: Column(
+        children: [
+          // Плашка о подписке: видна на всех вкладках и только когда есть
+          // о чём предупредить.
+          const SubscriptionBanner(),
+          Expanded(child: IndexedStack(index: index, children: _tabs)),
+        ],
+      ),
       bottomNavigationBar: DecoratedBox(
         decoration: const BoxDecoration(
           border: Border(top: BorderSide(color: AppColors.line)),

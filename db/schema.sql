@@ -28,9 +28,18 @@ CREATE TABLE organizations (
     id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     code        text NOT NULL,        -- короткий код: panorama, elitstroy
     name        text NOT NULL,        -- отображаемое название застройщика
+    -- Подписка. Доступ полный, пока now() <= plan_until + grace_days и не
+    -- is_blocked; дальше компания переходит в режим «только чтение».
+    -- Значения по умолчанию описывают пробный период: любая новая компания
+    -- получает 3 дня работы, даже если про это забыли при вставке.
+    plan_kind   text NOT NULL DEFAULT 'trial',
+    plan_until  timestamptz NOT NULL DEFAULT now() + interval '3 days',
+    grace_days  integer NOT NULL DEFAULT 0,   -- 0 у пробного, 3 у платного
+    is_blocked  boolean NOT NULL DEFAULT false,
     created_at  timestamptz NOT NULL DEFAULT now(),
     updated_at  timestamptz NOT NULL DEFAULT now(),
-    deleted_at  timestamptz
+    deleted_at  timestamptz,
+    CONSTRAINT organizations_plan_kind_check CHECK (plan_kind IN ('trial','paid'))
 );
 CREATE UNIQUE INDEX organizations_code_uniq
     ON organizations (lower(code)) WHERE deleted_at IS NULL;
@@ -40,7 +49,9 @@ CREATE UNIQUE INDEX organizations_code_uniq
 -- =============================================================================
 
 CREATE TABLE roles (
-    code        text PRIMARY KEY CHECK (code IN ('manager', 'admin')),
+    code        text PRIMARY KEY
+                    CONSTRAINT roles_code_check
+                    CHECK (code IN ('manager', 'admin', 'superadmin')),
     title       text NOT NULL
 );
 
@@ -87,6 +98,21 @@ CREATE TABLE sessions (
 CREATE INDEX sessions_user_idx ON sessions (user_id) WHERE revoked_at IS NULL;
 -- Токен разрешается в личность на каждом запросе — ищем строго по хешу.
 CREATE UNIQUE INDEX sessions_token_hash_uniq ON sessions (token_hash);
+
+-- История операций с подпиской: кто и когда продлевал. Действующий срок лежит
+-- в organizations, здесь только журнал.
+CREATE TABLE subscriptions (
+    id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    org_id      uuid NOT NULL CONSTRAINT subscriptions_org_fk
+                    REFERENCES organizations(id) ON DELETE RESTRICT,
+    kind        text NOT NULL CHECK (kind IN ('trial', 'paid')),
+    starts_at   timestamptz NOT NULL DEFAULT now(),
+    ends_at     timestamptz NOT NULL,
+    note        text,
+    created_at  timestamptz NOT NULL DEFAULT now(),
+    created_by  uuid REFERENCES users(id) ON DELETE RESTRICT
+);
+CREATE INDEX subscriptions_org_idx ON subscriptions (org_id, ends_at DESC);
 
 CREATE TABLE devices (
     id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),

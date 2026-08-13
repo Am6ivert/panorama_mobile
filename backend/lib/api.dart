@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 
 import 'package:shelf/shelf.dart';
@@ -24,6 +25,7 @@ class Api {
 
     // --- Аутентификация ---
     r.post('/api/v1/auth/login', _login);
+    r.post('/api/v1/auth/register', _register);
     r.post('/api/v1/auth/logout', _logout);
     r.get('/api/v1/auth/me', _meRoute);
 
@@ -64,6 +66,11 @@ class Api {
     r.post('/api/v1/notifications/<id>/read', _markRead);
     r.post('/api/v1/notifications/read-all', _markAllRead);
     r.get('/api/v1/audit', _audit);
+
+    // --- Суперадминистратор: компании и подписки ---
+    r.get('/api/v1/superadmin/orgs', _superOrgs);
+    r.post('/api/v1/superadmin/orgs/<id>/subscribe', _superSubscribe);
+    r.post('/api/v1/superadmin/orgs/<id>/block', _superBlock);
 
     // --- Push-токены устройств ---
     r.post('/api/v1/devices', _registerDevice);
@@ -283,7 +290,208 @@ class Api {
         await db.one('$_userSelectAny AND u.id = @id', {'id': user['id']});
     await _log(user['org_id'] as String, user['id'] as String, 'Вход', 'user',
         user['id']);
-    return jsonOk({'user': full, 'token': token});
+    // Состояние подписки отдаём сразу: приложению не нужен второй запрос,
+    // чтобы понять, показывать ли плашку об истечении.
+    final org = await db.one(
+      '''SELECT o.name, o.plan_kind,
+                to_char(o.plan_until AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.USZ') AS plan_until,
+                CASE WHEN o.is_blocked THEN 'blocked'
+                     WHEN o.plan_until IS NOT NULL
+                      AND now() <= o.plan_until + make_interval(days => o.grace_days)
+                     THEN 'full' ELSE 'read_only' END AS access
+         FROM organizations o WHERE o.id = @org''',
+      {'org': user['org_id']},
+    );
+    return jsonOk({
+      'user': full,
+      'token': token,
+      'subscription': {
+        'access': org?['access'],
+        'plan_kind': org?['plan_kind'],
+        'plan_until': org?['plan_until'],
+        'org_name': org?['name'],
+        'support': _support,
+      },
+    });
+  }
+
+  // ===========================================================================
+  // Регистрация
+  // ===========================================================================
+
+  /// Самостоятельная регистрация застройщика.
+  ///
+  /// Создаёт компанию и первого пользователя в ней — администратора. Дальше он
+  /// сам заводит менеджеров: отдельной роли «владелец» нет, потому что первый
+  /// администратор ничем не отличается от созданных им позже.
+  ///
+  /// Компания получает пробный период из умолчаний таблицы `organizations`
+  /// (3 дня), поэтому здесь про сроки ничего не сказано: правило живёт в одном
+  /// месте — в схеме.
+  ///
+  /// Накрутку пробных периодов ограничивает уникальность телефона: номер
+  /// уникален во всей базе, поэтому с одного номера компанию можно завести
+  /// только один раз.
+  Future<Response> _register(Request request) async {
+    final body = await readJson(request);
+    final name = (body['name'] as String?)?.trim() ?? '';
+    final company = (body['company'] as String?)?.trim() ?? '';
+    final phone = _normalizePhone((body['phone'] as String?) ?? '');
+    final login = (body['login'] as String?)?.trim().toLowerCase() ?? '';
+    final password = body['password'] as String? ?? '';
+
+    // Проверки повторяют те, что стоят в приложении: клиент можно подменить.
+    if (name.length < 3) return jsonError(422, 'Укажите фамилию, имя и отчество');
+    if (company.length < 2) return jsonError(422, 'Укажите название компании');
+    // Верхняя граница - предел международного формата E.164 (15 цифр).
+    final phoneDigits = phone.replaceAll('+', '');
+    if (phoneDigits.length < 7 || phoneDigits.length > 15) {
+      return jsonError(422, 'Укажите номер телефона');
+    }
+    if (!RegExp(r'^[a-z0-9._-]{3,32}$').hasMatch(login)) {
+      return jsonError(
+          422,
+          'Логин: латинские буквы, цифры, точка, дефис или подчёркивание, '
+          'от 3 до 32 символов');
+    }
+    if (password.length < 6) {
+      return jsonError(422, 'Пароль должен быть не короче 6 символов');
+    }
+
+    // Заранее — чтобы вместо кода нарушения уникальности человек увидел,
+    // что именно занято. Гонку всё равно ловим ниже по SQLSTATE.
+    final taken = await db.one(
+      '''SELECT bool_or(lower(login) = @l) AS login_taken,
+                bool_or(phone = @p)        AS phone_taken
+         FROM users WHERE deleted_at IS NULL AND (lower(login) = @l OR phone = @p)''',
+      {'l': login, 'p': phone},
+    );
+    if (taken?['login_taken'] == true) {
+      return jsonError(409, 'Такой логин уже занят — придумайте другой');
+    }
+    if (taken?['phone_taken'] == true) {
+      return jsonError(
+          409, 'Этот номер уже зарегистрирован. Войдите под своим логином.');
+    }
+
+    final token = _token();
+    Map<String, dynamic> created;
+    try {
+      created = await db.tx((tx) async {
+        final org = await tx.one(
+          '''INSERT INTO organizations (code, name)
+             VALUES (@code, @name)
+             RETURNING id::text AS id, name, plan_kind,
+                       to_char(plan_until AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.USZ') AS plan_until''',
+          {'code': _orgCode(company), 'name': company},
+        );
+        final orgId = org!['id'] as String;
+
+        // must_change_password = false: пароль человек выбрал сам, менять его
+        // на первом же экране незачем.
+        final user = await tx.one(
+          '''INSERT INTO users (org_id, full_name, login, phone,
+                                password_hash, must_change_password)
+             VALUES (@org, @name, @login, @phone,
+                     crypt(@pass, gen_salt('bf')), false)
+             RETURNING id::text AS id''',
+          {
+            'org': orgId,
+            'name': name,
+            'login': login,
+            'phone': phone,
+            'pass': password,
+          },
+        );
+        final userId = user!['id'] as String;
+
+        await tx.query(
+          "INSERT INTO user_roles (user_id, role_code) VALUES (@u, 'admin')",
+          {'u': userId},
+        );
+        await tx.query(
+          '''INSERT INTO sessions (user_id, token_hash, expires_at)
+             VALUES (@u, @t, now() + interval '30 days')''',
+          {'u': userId, 't': hashToken(token)},
+        );
+        return {'org': org, 'user_id': userId};
+      });
+    } catch (e) {
+      // Между проверкой выше и вставкой мог вклиниться другой запрос.
+      if (pgErrorCode(e) == '23505') {
+        return jsonError(409, 'Такой логин или номер уже зарегистрирован');
+      }
+      rethrow;
+    }
+
+    final org = created['org'] as Map<String, dynamic>;
+    final userId = created['user_id'] as String;
+    final orgId = org['id'] as String;
+    final full = await db.one('$_userSelectAny AND u.id = @id', {'id': userId});
+    await _log(orgId, userId, 'Регистрация компании', 'org', orgId);
+
+    return jsonOk({
+      'user': full,
+      'token': token,
+      'subscription': {
+        'access': 'full', // компания только что создана — пробный период идёт
+        'plan_kind': org['plan_kind'],
+        'plan_until': org['plan_until'],
+        'org_name': org['name'],
+        'support': _support,
+      },
+    });
+  }
+
+  /// Убирает из телефона оформление, сохраняя способ записи.
+  ///
+  /// Принимаются оба вида: местный «0700 123456» и международный
+  /// «+996 700 123456». Код страны не подставляется и не отбрасывается —
+  /// клиенты из разных стран, а угадывать страну по длине номера значит
+  /// однажды подставить чужую.
+  ///
+  /// Нормализация нужна, чтобы «0700 123456» и «0700-123456» были одним
+  /// номером: иначе уникальность телефона обходится пробелом.
+  static String _normalizePhone(String raw) {
+    final trimmed = raw.trim();
+    var digits = trimmed.replaceAll(RegExp(r'[^0-9]'), '');
+    // 00 в начале - тот же международный префикс, что и плюс.
+    final international =
+        trimmed.startsWith('+') || digits.startsWith('00');
+    if (digits.startsWith('00')) digits = digits.substring(2);
+    if (digits.isEmpty) return '';
+    return international ? '+$digits' : digits;
+  }
+
+  /// Короткий латинский код компании: он виден в журнале и в панели
+  /// суперадминистратора, поэтому кириллицу транслитерируем.
+  ///
+  /// Хвост из случайных символов нужен, чтобы две «Панорамы» не столкнулись на
+  /// уникальном индексе.
+  String _orgCode(String company) {
+    const map = {
+      'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'e',
+      'ж': 'zh', 'з': 'z', 'и': 'i', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm',
+      'н': 'n', 'о': 'o', 'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u',
+      'ф': 'f', 'х': 'h', 'ц': 'c', 'ч': 'ch', 'ш': 'sh', 'щ': 'sch',
+      'ъ': '', 'ы': 'y', 'ь': '', 'э': 'e', 'ю': 'yu', 'я': 'ya',
+      'ң': 'n', 'ө': 'o', 'ү': 'u',
+    };
+    final buffer = StringBuffer();
+    for (final ch in company.toLowerCase().split('')) {
+      if (map.containsKey(ch)) {
+        buffer.write(map[ch]);
+      } else if (RegExp(r'[a-z0-9]').hasMatch(ch)) {
+        buffer.write(ch);
+      } else if (buffer.isNotEmpty && !buffer.toString().endsWith('-')) {
+        buffer.write('-');
+      }
+    }
+    var slug = buffer.toString().replaceAll(RegExp(r'-+$'), '');
+    if (slug.length > 24) slug = slug.substring(0, 24);
+    if (slug.isEmpty) slug = 'org';
+    final tail = _rnd.nextInt(0xFFFF).toRadixString(16).padLeft(4, '0');
+    return '$slug-$tail';
   }
 
   /// Отзыв текущей сессии — токен сразу перестаёт работать.
@@ -297,12 +505,159 @@ class Api {
     return jsonOk({'ok': true});
   }
 
+  /// Контакты для продления подписки.
+  ///
+  /// По умолчанию — контакты владельца сервиса, чтобы кнопка «Связаться»
+  /// работала сразу после установки. Переменные окружения их перекрывают,
+  /// когда контакты поменяются или сервис передадут другим людям:
+  ///   SUPPORT_EMAIL=sales@example.kg
+  ///   SUPPORT_URL=https://wa.me/996555112233
+  static const _defaultSupportEmail = 'esoyuzbekov@gmail.com';
+  static const _defaultSupportUrl = 'https://wa.me/996777060412';
+
+  /// Пустая строка в переменной окружения — это «контакта нет», а не
+  /// «подставь значение по умолчанию»: так контакт можно осознанно убрать.
+  static String _env(String name, String fallback) {
+    final value = Platform.environment[name];
+    return value == null ? fallback : value.trim();
+  }
+
+  static Map<String, String> get _support => {
+        'email': _env('SUPPORT_EMAIL', _defaultSupportEmail),
+        'url': _env('SUPPORT_URL', _defaultSupportUrl),
+      };
+
+  /// Состояние подписки в виде, пригодном для приложения.
+  Map<String, dynamic> _subscriptionJson(AuthContext me) => {
+        'access': me.access.wire,
+        'plan_kind': me.planKind,
+        'plan_until': me.planUntil,
+        'org_name': me.orgName,
+        'support': _support,
+      };
+
   /// Кто я по мнению сервера — для проверки живости токена при старте app.
   Future<Response> _meRoute(Request request) async {
     final me = _me(request);
     final user =
         await db.one('$_userSelect AND u.id=@id', {'id': me.userId, 'org': me.orgId});
-    return jsonOk({...?user, 'org_code': me.orgCode, 'org_name': me.orgName});
+    return jsonOk({
+      ...?user,
+      'org_code': me.orgCode,
+      'is_superadmin': me.isSuperadmin,
+      'subscription': _subscriptionJson(me),
+    });
+  }
+
+  // ===========================================================================
+  // Суперадминистратор
+  //
+  // Единственная роль, которая видит данные всех компаний. Поэтому здесь нет
+  // фильтра по org_id — вместо него на входе каждой ручки стоит _superOnly.
+  // ===========================================================================
+
+  /// Вернуть 403, если автор не суперадминистратор.
+  Response? _superOnly(Request request) => _me(request).isSuperadmin
+      ? null
+      : jsonError(403, 'Действие доступно только суперадминистратору');
+
+  /// Компании с подписками, администраторами и размером.
+  ///
+  /// По менеджерам отдаём только количество: суперадминистратору незачем видеть
+  /// поимённый состав отделов продаж чужих компаний.
+  Future<Response> _superOrgs(Request request) async {
+    final denied = _superOnly(request);
+    if (denied != null) return denied;
+
+    return jsonOk(await db.query('''
+      SELECT o.id::text AS id, o.code, o.name, o.plan_kind, o.grace_days,
+             o.is_blocked,
+             to_char(o.plan_until AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.USZ') AS plan_until,
+             to_char(o.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.USZ') AS created_at,
+             CASE WHEN o.is_blocked THEN 'blocked'
+                  WHEN o.plan_until IS NOT NULL
+                   AND now() <= o.plan_until + make_interval(days => o.grace_days)
+                  THEN 'full' ELSE 'read_only' END AS access,
+             (SELECT count(*) FROM users u
+               WHERE u.org_id = o.id AND u.deleted_at IS NULL AND u.blocked = false
+                 AND EXISTS (SELECT 1 FROM user_roles r
+                              WHERE r.user_id = u.id AND r.role_code = 'manager')) AS managers,
+             (SELECT count(*) FROM apartments a
+               WHERE a.org_id = o.id AND a.deleted_at IS NULL) AS apartments,
+             COALESCE((SELECT json_agg(json_build_object(
+                   'id', au.id::text, 'name', au.full_name, 'login', au.login,
+                   'phone', au.phone, 'blocked', au.blocked) ORDER BY au.login)
+                 FROM users au
+                 WHERE au.org_id = o.id AND au.deleted_at IS NULL
+                   AND EXISTS (SELECT 1 FROM user_roles r
+                                WHERE r.user_id = au.id AND r.role_code = 'admin')
+               ), '[]'::json) AS admins
+      FROM organizations o
+      WHERE o.deleted_at IS NULL AND o.code <> 'system'
+      ORDER BY o.name'''));
+  }
+
+  /// Продлить подписку компании на [months] месяцев.
+  ///
+  /// Если подписка ещё действует, продлеваем от её конца, иначе от сегодня —
+  /// иначе оплата за месяц во время действующей подписки съедала бы остаток.
+  Future<Response> _superSubscribe(Request request, String id) async {
+    final denied = _superOnly(request);
+    if (denied != null) return denied;
+    final me = _me(request);
+    final b = await readJson(request);
+    final months = ((b['months'] as num?)?.toInt() ?? 1).clamp(1, 60);
+    final note = b['note'] as String?;
+
+    final row = await db.one(
+      '''UPDATE organizations
+         SET plan_kind = 'paid',
+             plan_until = GREATEST(COALESCE(plan_until, now()), now())
+                          + make_interval(months => @m),
+             grace_days = 3,
+             is_blocked = false,
+             updated_at = now()
+         WHERE id = @id AND deleted_at IS NULL
+         RETURNING to_char(plan_until AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.USZ') AS plan_until,
+                   plan_until AS raw''',
+      {'m': months, 'id': id},
+    );
+    if (row == null) return jsonError(404, 'Компания не найдена');
+
+    await db.query(
+      '''INSERT INTO subscriptions (org_id, kind, ends_at, note, created_by)
+         VALUES (@org, 'paid', @ends, @note, @by)''',
+      {'org': id, 'ends': row['raw'], 'note': note, 'by': me.userId},
+    );
+    await _log(me.orgId, me.userId, 'Продление подписки (+$months мес.)',
+        'organization', id);
+
+    // Компания снова работает — сообщаем её администраторам.
+    await _notifyUsers(await _adminIds(id), 'account', 'Подписка продлена',
+        'Доступ активен до ${row['plan_until']}', null);
+
+    return jsonOk({'plan_until': row['plan_until'], 'months': months});
+  }
+
+  /// Приостановить или возобновить работу компании.
+  Future<Response> _superBlock(Request request, String id) async {
+    final denied = _superOnly(request);
+    if (denied != null) return denied;
+    final me = _me(request);
+    final b = await readJson(request);
+    final blocked = b['blocked'] == true;
+
+    final rows = await db.query(
+      '''UPDATE organizations SET is_blocked = @v, updated_at = now()
+         WHERE id = @id AND deleted_at IS NULL RETURNING id''',
+      {'v': blocked, 'id': id},
+    );
+    if (rows.isEmpty) return jsonError(404, 'Компания не найдена');
+
+    await _log(me.orgId, me.userId,
+        blocked ? 'Компания приостановлена' : 'Компания возобновлена',
+        'organization', id);
+    return jsonOk({'blocked': blocked});
   }
 
   // ===========================================================================
@@ -1391,9 +1746,45 @@ class Api {
     );
   }
 
+  // Компании, которым уже сообщили об истечении (orgId -> дата окончания).
+  final _planWarned = <String, String>{};
+
+  /// Предупреждение администраторам за 3 дня до окончания подписки.
+  ///
+  /// Ключ в [_planWarned] — сама дата окончания, поэтому после продления
+  /// компания снова получит предупреждение в свой срок.
+  Future<void> _checkSubscriptions() async {
+    final soon = await db.query('''
+      SELECT o.id::text AS id, o.name,
+             to_char(o.plan_until AT TIME ZONE 'Asia/Bishkek','DD.MM.YYYY') AS until,
+             to_char(o.plan_until,'YYYY-MM-DD"T"HH24:MI:SS') AS mark
+      FROM organizations o
+      WHERE o.deleted_at IS NULL AND o.is_blocked = false
+        AND o.plan_until IS NOT NULL
+        AND o.plan_until > now()
+        AND o.plan_until < now() + interval '3 days' ''');
+
+    for (final org in soon) {
+      final id = org['id'] as String;
+      final mark = org['mark'] as String;
+      if (_planWarned[id] == mark) continue;
+      _planWarned[id] = mark;
+
+      await _notifyUsers(
+        await _adminIds(id),
+        'account',
+        'Подписка заканчивается',
+        'Доступ к «${org['name']}» действует до ${org['until']}. '
+            'Свяжитесь с нами, чтобы продлить.',
+        null,
+      );
+    }
+  }
+
   /// Периодическая проверка броней (FR-11.2, FR-11.3, FR-11.4). Зовётся раз в
   /// минуту из server.dart.
   Future<void> runExpiryChecks() async {
+    await _checkSubscriptions();
     // 1) Истёкшие брони — снять и уведомить.
     final expired = await db.query(
       '''SELECT a.id::text AS id, a.held_by_id::text AS holder,

@@ -10,6 +10,8 @@ import '../models/client_model.dart';
 import '../models/complex_model.dart';
 import '../models/deal_model.dart';
 import '../models/manager_model.dart';
+import '../models/org_summary.dart';
+import '../models/subscription.dart';
 import '../models/unit_model.dart';
 import '../models/unit_status.dart';
 import '../models/user_role.dart';
@@ -23,6 +25,7 @@ final apiClientProvider = Provider<ApiClient>((ref) {
   // сбрасываем пользователя и возвращаем на экран входа.
   client.onUnauthorized = () {
     if (ref.read(currentUserProvider) == null) return;
+    resetCompanyData(ref.invalidate);
     ref.read(currentUserProvider.notifier).state = null;
     AppRouter.navigatorKey.currentState?.pushNamedAndRemoveUntil(
       AppRoutes.login,
@@ -45,6 +48,39 @@ final panoramaRepositoryProvider = Provider<PanoramaRepository>((ref) {
   ref.onDispose(repository.dispose);
   return repository;
 });
+
+/// Подписка своей компании: от неё зависит плашка и режим только чтения.
+final subscriptionProvider = FutureProvider<Subscription?>(
+  (ref) => ref.read(panoramaRepositoryProvider).fetchSubscription(),
+);
+
+/// Компании и их подписки — только для суперадминистратора.
+final orgsProvider = FutureProvider<List<OrgSummary>>(
+  (ref) => ref.read(panoramaRepositoryProvider).fetchOrgs(),
+);
+
+/// Сбрасывает все данные компании из кэша.
+///
+/// Обязательна при КАЖДОЙ смене пользователя: провайдеры ниже кэшируют ответы
+/// сервера, и без сброса следующий вошедший увидит данные предыдущего — даже
+/// если тот из другой компании. Сервер при этом фильтрует правильно, но
+/// приложение просто не спрашивает его заново.
+///
+/// Вызывается при входе, восстановлении сессии, выходе и ответе 401.
+/// Производные провайдеры (видимые клиенты, сделки, квартиры блока) считаются
+/// из этих и пересчитаются сами.
+void resetCompanyData(void Function(ProviderOrFamily) invalidate) {
+  invalidate(complexesProvider);
+  invalidate(usersProvider);
+  invalidate(clientsProvider);
+  invalidate(dealsProvider);
+  invalidate(unitsProvider);
+  invalidate(notificationsProvider);
+  invalidate(auditProvider);
+  invalidate(unitDetailsProvider);
+  invalidate(orgsProvider);
+  invalidate(subscriptionProvider);
+}
 
 /// Вошедший пользователь. null — не авторизован (экран входа).
 final currentUserProvider = StateProvider<ManagerModel?>((ref) => null);

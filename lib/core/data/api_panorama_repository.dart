@@ -7,6 +7,8 @@ import '../models/complex_model.dart';
 import '../models/deal_model.dart';
 import '../models/deal_stage.dart';
 import '../models/manager_model.dart';
+import '../models/org_summary.dart';
+import '../models/subscription.dart';
 import '../models/unit_model.dart';
 import '../models/unit_status.dart';
 import '../models/user_role.dart';
@@ -83,6 +85,65 @@ class ApiPanoramaRepository implements PanoramaRepository {
       await _store.clear();
       return null;
     }
+  }
+
+  @override
+  Future<LoginResult> register({
+    required String name,
+    required String company,
+    required String phone,
+    required String login,
+    required String password,
+  }) async {
+    try {
+      final res = await _api.post('/auth/register', body: {
+        'name': name,
+        'company': company,
+        'phone': phone,
+        'login': login,
+        'password': password,
+      });
+      final token = res['token'] as String?;
+      if (token != null) {
+        _api.setToken(token);
+        await _store.write(token);
+      }
+      return LoginOk(ManagerModel.fromJson(res['user'] as Map<String, dynamic>));
+    } on ApiException catch (e) {
+      return LoginFailed(e.message);
+    } catch (e) {
+      return LoginFailed('$e');
+    }
+  }
+
+  @override
+  Future<Subscription?> fetchSubscription() async {
+    final me = await _api.getOne('/auth/me');
+    final raw = me['subscription'];
+    if (raw is! Map) return null;
+    return Subscription.fromJson(raw.cast<String, dynamic>());
+  }
+
+  @override
+  Future<List<OrgSummary>> fetchOrgs() async =>
+      (await _api.getList('/superadmin/orgs')).map(OrgSummary.fromJson).toList();
+
+  @override
+  Future<void> subscribeOrg({
+    required String orgId,
+    required int months,
+    String? note,
+  }) async {
+    await _api.post('/superadmin/orgs/$orgId/subscribe',
+        body: {'months': months, 'note': ?note});
+  }
+
+  @override
+  Future<void> setOrgBlocked({
+    required String orgId,
+    required bool blocked,
+  }) async {
+    await _api.post('/superadmin/orgs/$orgId/block', body: {'blocked': blocked});
   }
 
   @override

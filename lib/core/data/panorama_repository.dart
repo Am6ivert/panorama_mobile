@@ -5,6 +5,8 @@ import '../models/complex_model.dart';
 import '../models/deal_model.dart';
 import '../models/deal_stage.dart';
 import '../models/manager_model.dart';
+import '../models/org_summary.dart';
+import '../models/subscription.dart';
 import '../models/unit_model.dart';
 import '../models/unit_status.dart';
 import '../models/user_role.dart';
@@ -85,8 +87,37 @@ abstract interface class PanoramaRepository {
 
   Future<LoginResult> login({required String login, required String password});
 
+  /// Регистрация застройщика: создаёт компанию и её первого администратора,
+  /// сразу выполняя вход. Возвращает тот же результат, что и [login].
+  Future<LoginResult> register({
+    required String name,
+    required String company,
+    required String phone,
+    required String login,
+    required String password,
+  });
+
   /// Завершить сессию: сервер отзывает токен, клиент его забывает.
   Future<void> logout();
+
+  /// Состояние подписки своей компании. null — сервер её не прислал
+  /// (например, приложение работает на моках).
+  Future<Subscription?> fetchSubscription();
+
+  // --- Суперадминистратор: компании и подписки ---
+
+  /// Все компании с подписками и администраторами.
+  Future<List<OrgSummary>> fetchOrgs();
+
+  /// Продлить подписку компании на [months] месяцев.
+  Future<void> subscribeOrg({
+    required String orgId,
+    required int months,
+    String? note,
+  });
+
+  /// Приостановить или возобновить работу компании.
+  Future<void> setOrgBlocked({required String orgId, required bool blocked});
 
   /// Восстановить сессию сохранённым токеном при запуске приложения.
   ///

@@ -33,6 +33,8 @@ class ManagerModel {
 
   bool get isAdmin => role.isAdmin;
 
+  bool get isSuperadmin => role.isSuperadmin;
+
   /// «Азамат Кубанычбеков» -> «АК»
   String get initials {
     final parts = name.trim().split(RegExp(r'\s+'));

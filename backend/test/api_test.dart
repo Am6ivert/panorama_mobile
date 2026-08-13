@@ -253,6 +253,322 @@ void main() {
   });
 
   // ===========================================================================
+  group('Регистрация', () {
+    /// Уникальный хвост, чтобы прогоны не сталкивались на уникальных индексах.
+    String tag() => uniqueSuffix();
+
+    Future<TestResponse> register(String t,
+            {String? login, String? phone, String company = 'ОсОО Тест'}) =>
+        api.post('/api/v1/auth/register', body: {
+          'name': 'Тестов Тест Тестович',
+          'company': company,
+          // Хвост метки времени, а не начало: начало у всех вызовов прогона
+          // одинаковое, и номера сталкивались бы между собой.
+          'phone': phone ?? '+${t.substring(t.length - 12)}',
+          'login': login ?? 'reg$t',
+          'password': 'secret123',
+        });
+
+    test('регистрация создаёт компанию и её администратора', () async {
+      final t = tag();
+      final res = await register(t, login: 'reg.ok$t');
+      expect(res.status, 200, reason: res.text);
+
+      // Токен выдаётся сразу: второй раз входить не нужно.
+      final token = res.map['token'] as String;
+      expect(token, isNotEmpty);
+      expect((res.map['user'] as Map)['role'], 'admin');
+      // Пароль человек выбрал сам — принуждать к смене незачем.
+      expect((res.map['user'] as Map)['must_change_password'], false);
+
+      // Компания на пробном периоде и работать можно прямо сейчас.
+      final sub = res.map['subscription'] as Map;
+      expect(sub['plan_kind'], 'trial');
+      expect(sub['access'], 'full');
+      expect(
+          (await api.post('/api/v1/complexes', token: token, body: {
+            'name': 'ЖК', 'address': 'ул.', 'deadline': '', 'segment': ''
+          }))
+              .status,
+          200);
+    });
+
+    test('регистрация без токена, но с проверкой полей', () async {
+      // Короткий пароль, кривой логин и пустая компания до базы не доходят.
+      for (final body in [
+        {'name': 'Т', 'company': 'К', 'phone': '0700111222',
+         'login': 'abc', 'password': 'secret123'},
+        {'name': 'Тестов Тест', 'company': 'ОсОО', 'phone': '0700111222',
+         'login': 'ab', 'password': 'secret123'},
+        {'name': 'Тестов Тест', 'company': 'ОсОО', 'phone': '0700111222',
+         'login': 'normal', 'password': '123'},
+      ]) {
+        expect((await api.post('/api/v1/auth/register', body: body)).status, 422,
+            reason: '$body');
+      }
+    });
+
+    test('занятый логин отклоняется', () async {
+      final t = tag();
+      expect((await register(t, login: 'reg.dup$t')).status, 200);
+
+      final again = await register(tag(), login: 'reg.dup$t');
+      expect(again.status, 409);
+      expect(again.error, contains('логин'));
+    });
+
+    test('оформление номера не создаёт второй учётной записи', () async {
+      // Иначе «0700 123456» и «0700-123456» считались бы разными номерами,
+      // и с одного телефона можно было бы набирать пробные периоды без конца.
+      final suffix = tag();
+      final digits = suffix.substring(suffix.length - 6); // шесть цифр
+
+      expect(
+          (await register(tag(),
+                  login: 'ph.a${tag()}', phone: '0700 $digits'))
+              .status,
+          200);
+
+      final same =
+          await register(tag(), login: 'ph.b${tag()}', phone: '0700-$digits');
+      expect(same.status, 409);
+      expect(same.error, contains('номер'));
+    });
+
+    test('принимаются и местные, и иностранные номера', () async {
+      // Код страны не требуем и не подставляем: «0700 123456» - обычный ввод,
+      // «+7 700 1234567» - иностранный клиент.
+      final suffix = tag();
+      final d = suffix.substring(suffix.length - 6); // шесть цифр на прогон
+      for (final phone in [
+        '0700 $d',        // местная запись
+        '+7 700 1$d',     // Казахстан
+        '+998 90 1$d',    // Узбекистан
+        '00996 701 $d',   // международный префикс вместо плюса
+      ]) {
+        final res = await register(tag(), login: 'ph${tag()}', phone: phone);
+        expect(res.status, 200, reason: '$phone -> ${res.text}');
+      }
+    });
+
+    test('слишком короткий номер отклоняется', () async {
+      final res =
+          await register(tag(), login: 'ph.short${tag()}', phone: '12345');
+      expect(res.status, 422);
+      expect(res.error, contains('номер телефона'));
+    });
+
+  });
+
+  // ===========================================================================
+  group('Подписка компании', () {
+    test('новая компания сразу получает 3 пробных дня', () async {
+      // Пробный период задан умолчанием таблицы, а не скриптом заведения
+      // компании: иначе компания, созданная любым другим путём, с первой
+      // секунды оказывается в режиме только чтения.
+      final org = await createOrg(api, 'plan.trial');
+      final row = await api.db.one(
+        '''SELECT plan_kind, grace_days,
+                  (plan_until > now() + interval '2 days'
+                   AND plan_until < now() + interval '4 days') AS three_days
+           FROM organizations WHERE id = @id''',
+        {'id': org.id},
+      );
+      expect(row!['plan_kind'], 'trial');
+      expect(row['three_days'], isTrue);
+      // Льготные дни - привилегия платной подписки.
+      expect(row['grace_days'], 0);
+
+      // И этими днями можно пользоваться: никакого setPlan не потребовалось.
+      expect(
+          (await api.post('/api/v1/complexes', token: org.adminToken, body: {
+            'name': 'ЖК', 'address': 'ул.', 'deadline': '', 'segment': ''
+          }))
+              .status,
+          200);
+    });
+
+    test('пока подписка действует, менять данные можно', () async {
+      final org = await createOrg(api, 'plan.ok');
+      await setPlan(api, org, days: 10);
+      expect(
+          (await api.post('/api/v1/complexes', token: org.adminToken, body: {
+            'name': 'ЖК', 'address': 'ул.', 'deadline': '', 'segment': ''
+          }))
+              .status,
+          200);
+    });
+
+    test('после истечения остаётся только чтение', () async {
+      final org = await createOrg(api, 'plan.exp');
+      await createComplexWithUnits(api, org, floors: 2, rooms: [1]);
+      // Срок вышел 5 дней назад, льготные 3 дня тоже прошли.
+      await setPlan(api, org, days: -5, graceDays: 3);
+
+      // Читать можно.
+      expect((await api.get('/api/v1/units', token: org.adminToken)).status, 200);
+      expect((await api.get('/api/v1/complexes', token: org.adminToken)).status, 200);
+
+      // Менять нельзя.
+      final create = await api.post('/api/v1/complexes',
+          token: org.adminToken,
+          body: {'name': 'ЖК 2', 'address': 'ул.', 'deadline': '', 'segment': ''});
+      expect(create.status, 402);
+      expect(create.error, contains('одписка'));
+
+      final unit = (await units(api, org.adminToken)).first['id'] as String;
+      expect(
+          (await api.post('/api/v1/units/$unit/take', token: org.managerToken))
+              .status,
+          402);
+    });
+
+    test('льготные дни после срока ещё дают полный доступ', () async {
+      final org = await createOrg(api, 'plan.grace');
+      // Срок вышел вчера, но льготных дней 3 — работа продолжается.
+      await setPlan(api, org, days: -1, graceDays: 3);
+      expect(
+          (await api.post('/api/v1/complexes', token: org.adminToken, body: {
+            'name': 'ЖК', 'address': 'ул.', 'deadline': '', 'segment': ''
+          }))
+              .status,
+          200);
+    });
+
+    test('приостановленная компания не может менять данные', () async {
+      final org = await createOrg(api, 'plan.block');
+      await setPlan(api, org, days: 30, blocked: true);
+      final res = await api.post('/api/v1/complexes',
+          token: org.adminToken,
+          body: {'name': 'ЖК', 'address': 'ул.', 'deadline': '', 'segment': ''});
+      expect(res.status, 402);
+      expect(res.error, contains('риостановлен'));
+    });
+
+    test('выход и смена своего пароля работают даже без подписки', () async {
+      final org = await createOrg(api, 'plan.esc');
+      await setPlan(api, org, days: -30);
+      expect(
+          (await api.post('/api/v1/users/${org.managerId}/password',
+                  token: org.managerToken, body: {'new_password': 'secret1'}))
+              .status,
+          200);
+      expect(
+          (await api.post('/api/v1/auth/logout', token: org.adminToken)).status,
+          200);
+    });
+
+    test('вход возвращает состояние подписки', () async {
+      final org = await createOrg(api, 'plan.info');
+      await setPlan(api, org, days: 10);
+      final res = await api.post('/api/v1/auth/login',
+          body: {'login': org.adminLogin, 'password': testPassword});
+      expect(res.status, 200);
+      final sub = (res.map['subscription'] as Map).cast<String, dynamic>();
+      expect(sub['access'], 'full');
+      expect(sub['plan_until'], isNotNull);
+    });
+  });
+
+  // ===========================================================================
+  group('Суперадминистратор', () {
+    test('обычному админу панель суперадмина закрыта', () async {
+      final org = await createOrg(api, 'nosuper');
+      expect((await api.get('/api/v1/superadmin/orgs', token: org.adminToken))
+          .status, 403);
+      expect(
+          (await api.post('/api/v1/superadmin/orgs/${org.id}/subscribe',
+                  token: org.adminToken, body: {'months': 12}))
+              .status,
+          403);
+    });
+
+    test('видит компании, их админов и число менеджеров', () async {
+      final org = await createOrg(api, 'seen');
+      final su = await createSuperadmin(api);
+
+      final list = (await api.get('/api/v1/superadmin/orgs', token: su.token)).list;
+      final row = list.firstWhere((o) => o['id'] == org.id);
+      expect(row['managers'], 1);
+      final admins = (row['admins'] as List).cast<Map<String, dynamic>>();
+      expect(admins.map((a) => a['login']), contains(org.adminLogin));
+      // Служебная компания в списке не участвует.
+      expect(list.any((o) => o['code'] == 'system'), isFalse);
+    });
+
+    test('продление возвращает компанию в работу', () async {
+      final org = await createOrg(api, 'renew');
+      final su = await createSuperadmin(api);
+      await setPlan(api, org, days: -30);
+
+      // До продления — только чтение.
+      expect(
+          (await api.post('/api/v1/complexes', token: org.adminToken, body: {
+            'name': 'ЖК', 'address': 'ул.', 'deadline': '', 'segment': ''
+          }))
+              .status,
+          402);
+
+      final renew = await api.post('/api/v1/superadmin/orgs/${org.id}/subscribe',
+          token: su.token, body: {'months': 1, 'note': 'оплата за март'});
+      expect(renew.status, 200);
+
+      // После продления — снова полный доступ.
+      expect(
+          (await api.post('/api/v1/complexes', token: org.adminToken, body: {
+            'name': 'ЖК', 'address': 'ул.', 'deadline': '', 'segment': ''
+          }))
+              .status,
+          200);
+
+      // Операция попала в историю.
+      final hist = await db.one(
+        'SELECT count(*) AS n FROM subscriptions WHERE org_id=@o AND kind=@k',
+        {'o': org.id, 'k': 'paid'},
+      );
+      expect(hist!['n'], 1);
+    });
+
+    test('блокировка и разблокировка компании', () async {
+      final org = await createOrg(api, 'blk');
+      final su = await createSuperadmin(api);
+
+      expect(
+          (await api.post('/api/v1/superadmin/orgs/${org.id}/block',
+                  token: su.token, body: {'blocked': true}))
+              .status,
+          200);
+      expect(
+          (await api.post('/api/v1/complexes', token: org.adminToken, body: {
+            'name': 'ЖК', 'address': 'ул.', 'deadline': '', 'segment': ''
+          }))
+              .status,
+          402);
+
+      expect(
+          (await api.post('/api/v1/superadmin/orgs/${org.id}/block',
+                  token: su.token, body: {'blocked': false}))
+              .status,
+          200);
+      expect(
+          (await api.post('/api/v1/complexes', token: org.adminToken, body: {
+            'name': 'ЖК 2', 'address': 'ул.', 'deadline': '', 'segment': ''
+          }))
+              .status,
+          200);
+    });
+
+    test('суперадмин не видит квартиры и клиентов компаний', () async {
+      final org = await createOrg(api, 'privacy');
+      await createComplexWithUnits(api, org, floors: 2, rooms: [1]);
+      final su = await createSuperadmin(api);
+      // Своя служебная компания пуста — чужой фонд ему не виден.
+      expect((await units(api, su.token)), isEmpty);
+      expect((await api.get('/api/v1/clients', token: su.token)).list, isEmpty);
+    });
+  });
+
+  // ===========================================================================
   group('Работа с квартирой', () {
     late TestOrg org;
     late List<Map<String, dynamic>> fond;
