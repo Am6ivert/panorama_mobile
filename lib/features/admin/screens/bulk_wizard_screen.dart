@@ -246,7 +246,26 @@ class _BulkWizardScreenState extends ConsumerState<BulkWizardScreen> {
 
   Future<void> _create() async {
     final admin = ref.read(currentUserProvider);
-    if (admin == null || _complexId == null || _saving) return;
+    if (admin == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Необходима авторизация')),
+      );
+      return;
+    }
+    if (_complexId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Выберите объект')),
+      );
+      return;
+    }
+    if (_blockName.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Введите название блока')),
+      );
+      return;
+    }
+    if (_saving) return;
+
     setState(() => _saving = true);
     _idempotencyKey ??=
         '${DateTime.now().microsecondsSinceEpoch}-${Random().nextInt(1 << 32)}';
