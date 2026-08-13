@@ -66,6 +66,14 @@ class DashboardScreen extends ConsumerWidget {
               : ListView(
                   padding: const EdgeInsets.only(bottom: 24),
                   children: [
+                    // Блок пропал при переделке интерфейса и вернулся сюда:
+                    // фонд по статусам — первое, что должен видеть отдел
+                    // продаж (FR-10.1).
+                    const SectionTitle('Фонд по статусам'),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: _StatusGrid(stats: stats),
+                    ),
                     const SectionTitle('Работа сейчас'),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -156,6 +164,7 @@ class DashboardScreen extends ConsumerWidget {
         builder: (_) => UnitSheet(unitId: unitId),
       );
 }
+
 
 class _StatusGrid extends StatelessWidget {
   const _StatusGrid({required this.stats});

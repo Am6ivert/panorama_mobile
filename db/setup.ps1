@@ -1,11 +1,11 @@
-# =============================================================================
+﻿# =============================================================================
 # Setup БД Panorama одним скриптом.
 # Запуск из корня проекта:
 #   powershell -ExecutionPolicy Bypass -File db\setup.ps1
 # Скрипт спросит пароль суперпользователя 'postgres' (заданный при установке
-# PostgreSQL) — нужен только для создания роли и базы, нигде не сохраняется.
+# PostgreSQL) - нужен только для создания роли и базы, нигде не сохраняется.
 #
-# ВНИМАНИЕ: init.sql пересоздаёт базу 'panorama' начисто (DROP + CREATE) —
+# ВНИМАНИЕ: init.sql пересоздаёт базу 'panorama' начисто (DROP + CREATE) -
 # запуск повторно безопасен, но все данные в ней будут стёрты.
 # =============================================================================
 $ErrorActionPreference = 'Stop'
@@ -13,19 +13,10 @@ $dbDir = $PSScriptRoot
 if (-not $dbDir) { $dbDir = Split-Path -Parent $MyInvocation.MyCommand.Path }
 
 # --- Find psql.exe -----------------------------------------------------------
-$psql = $null
-try {
-    $base = (Get-ItemProperty "HKLM:\SOFTWARE\PostgreSQL\Installations\*" -ErrorAction Stop |
-             Select-Object -First 1).'Base Directory'
-    if ($base) { $psql = Join-Path $base 'bin\psql.exe' }
-} catch {}
-if (-not $psql -or -not (Test-Path $psql)) {
-    $cmd = Get-Command psql.exe -ErrorAction SilentlyContinue
-    if ($cmd) { $psql = $cmd.Source }
-}
-if (-not $psql -or -not (Test-Path $psql)) {
-    throw "psql.exe not found. Set the path manually at the top of this script."
-}
+# Поиск psql и PGCLIENTENCODING=UTF8 (иначе на русской Windows psql читает
+# .sql как WIN1251 и русские имена из seed.sql попадают в базу мусором).
+. (Join-Path $dbDir '_psql.ps1')
+$psql = Find-Psql
 Write-Host "psql: $psql" -ForegroundColor Cyan
 
 # --- Superuser password (you type it) ----------------------------------------
@@ -36,7 +27,7 @@ Write-Host "`n[1/3] Role, database (recreated), pgcrypto extension..." -Foregrou
 & $psql -U postgres -h localhost -v ON_ERROR_STOP=1 -f (Join-Path $dbDir 'init.sql')
 if ($LASTEXITCODE -ne 0) { $env:PGPASSWORD=$null; throw "init.sql failed (wrong postgres password?)." }
 
-# From here on — as the application role.
+# From here on - as the application role.
 $env:PGPASSWORD = 'panorama'
 
 Write-Host "`n[2/3] Schema (tables, indexes)..." -ForegroundColor Green

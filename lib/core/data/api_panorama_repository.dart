@@ -12,6 +12,7 @@ import '../models/unit_status.dart';
 import '../models/user_role.dart';
 import '../network/api_client.dart';
 import 'panorama_repository.dart';
+import 'session_store.dart';
 
 /// Реализация на REST API Panorama (версионирование пути /api/v1/).
 ///
@@ -19,9 +20,10 @@ import 'panorama_repository.dart';
 /// сервиса; менять нужно будет только их и разбор ответа. Пока
 /// [AppConfig.useMockData] = true, класс не используется.
 class ApiPanoramaRepository implements PanoramaRepository {
-  ApiPanoramaRepository(this._api);
+  ApiPanoramaRepository(this._api, [this._store = const SessionStore()]);
 
   final ApiClient _api;
+  final SessionStore _store;
 
   /// Пока сервер не отдаёт события по WebSocket — перечитываем фонд.
   static const _pollInterval = Duration(seconds: 15);
@@ -37,12 +39,49 @@ class ApiPanoramaRepository implements PanoramaRepository {
         body: {'login': login, 'password': password},
       );
       final token = res['token'] as String?;
-      if (token != null) _api.setToken(token);
+      if (token != null) {
+        _api.setToken(token);
+        await _store.write(token); // чтобы не входить заново после перезапуска
+      }
       return LoginOk(ManagerModel.fromJson(res['user'] as Map<String, dynamic>));
     } on ApiException catch (e) {
       return LoginFailed(e.message);
     } catch (e) {
       return LoginFailed('$e');
+    }
+  }
+
+  @override
+  Future<void> logout() async {
+    try {
+      await _api.post('/auth/logout');
+    } on ApiException {
+      // Токен мог уже протухнуть — выход всё равно локально завершаем.
+    } finally {
+      _api.clearToken();
+      await _store.clear();
+    }
+  }
+
+  @override
+  Future<ManagerModel?> restoreSession() async {
+    final token = await _store.read();
+    if (token == null) return null;
+    _api.setToken(token);
+    try {
+      final user = ManagerModel.fromJson(await _api.getOne('/auth/me'));
+      // Временный пароль обязателен к смене — проводим через экран входа.
+      if (user.mustChangePassword) {
+        _api.clearToken();
+        await _store.clear();
+        return null;
+      }
+      return user;
+    } catch (_) {
+      // Сессия отозвана, истекла или сервер недоступен — начинаем с входа.
+      _api.clearToken();
+      await _store.clear();
+      return null;
     }
   }
 
@@ -118,12 +157,25 @@ class ApiPanoramaRepository implements PanoramaRepository {
     BulkBlockSpec spec, {
     required ManagerModel by,
   }) async {
+    // Раньше уходили только три поля, а группы этажей терялись — сервер
+    // создавал блок вообще без квартир.
     final res = await _api.post(
       '/blocks/bulk',
       body: {
         'complex_id': spec.complexId,
         'block': spec.blockName,
         'start_number': spec.startNumber,
+        'groups': [
+          for (final g in spec.groups)
+            {
+              'floor_from': g.floorFrom,
+              'floor_to': g.floorTo,
+              'rooms': g.roomsPerPosition,
+            },
+        ],
+        'technical_floors': spec.technicalFloors.toList(),
+        'skip_numbers': spec.skipNumbers.toList(),
+        'idempotency_key': spec.idempotencyKey,
       },
     );
     return (res['created'] as num?)?.toInt() ?? 0;
@@ -174,14 +226,93 @@ class ApiPanoramaRepository implements PanoramaRepository {
     await _api.post('/deals/$dealId/stage', body: {'stage': stage.wire}),
   );
 
+  /// Максимальный `updated_at`, полученный от сервера: граница для дельты.
+  /// Берём именно серверное значение, чтобы не зависеть от часов устройства.
+  String? _sinceMark;
+
+  Future<List<Map<String, dynamic>>> _rawUnits({String? since}) => _api.getList(
+        since == null
+            ? '/units'
+            : '/units?since=${Uri.encodeQueryComponent(since)}',
+      );
+
+  static String? _maxUpdatedAt(List<Map<String, dynamic>> rows) {
+    String? max;
+    for (final r in rows) {
+      final v = r['updated_at'] as String?;
+      // Формат фиксированной ширины (ISO-8601 в UTC), сравнение строк корректно.
+      if (v != null && (max == null || v.compareTo(max) > 0)) max = v;
+    }
+    return max;
+  }
+
+  /// Тот же порядок, что отдаёт сервер: объект, блок, номер.
+  static List<UnitModel> _sorted(Iterable<UnitModel> units) {
+    final list = units.toList();
+    list.sort((a, b) {
+      final byComplex = a.complexName.compareTo(b.complexName);
+      if (byComplex != 0) return byComplex;
+      final byBlock = a.block.compareTo(b.block);
+      if (byBlock != 0) return byBlock;
+      return a.number.compareTo(b.number);
+    });
+    return list;
+  }
+
   @override
-  Future<List<UnitModel>> fetchUnits() async =>
-      (await _api.getList('/units')).map(UnitModel.fromJson).toList();
+  Future<List<UnitModel>> fetchUnits() async {
+    final raw = await _rawUnits();
+    _sinceMark = _maxUpdatedAt(raw) ?? _sinceMark;
+    return raw.map(UnitModel.fromJson).toList();
+  }
+
+  @override
+  Future<UnitModel> fetchUnit(String unitId) async =>
+      UnitModel.fromJson(await _api.getOne('/units/$unitId'));
+
+  /// Живой фонд. Первый запрос — весь список, дальше только изменившееся.
+  ///
+  /// Раньше каждые 15 секунд выкачивался весь фонд вместе с историей по каждой
+  /// квартире. Теперь при отсутствии изменений с сервера приходит пустой
+  /// список, и подписчики даже не дёргаются.
+  /// Раз в столько опросов фонд перечитывается целиком.
+  ///
+  /// Страховка от изменения, закоммиченного задним числом: транзакция могла
+  /// начаться до нашего запроса, а завершиться после, и её `updated_at`
+  /// оказался бы раньше нашей метки. При 15-секундном опросе это раз в 5 минут.
+  static const _fullRefreshEvery = 20;
 
   @override
   Stream<List<UnitModel>> watchUnits() async* {
-    yield await fetchUnits();
-    yield* Stream.periodic(_pollInterval).asyncMap((_) => fetchUnits());
+    final byId = <String, UnitModel>{};
+    var polls = 0;
+
+    void absorb(List<Map<String, dynamic>> rows) {
+      for (final row in rows) {
+        final unit = UnitModel.fromJson(row);
+        byId[unit.id] = unit;
+      }
+    }
+
+    final first = await _rawUnits();
+    _sinceMark = _maxUpdatedAt(first) ?? _sinceMark;
+    absorb(first);
+    yield _sorted(byId.values);
+
+    while (true) {
+      await Future<void>.delayed(_pollInterval);
+      try {
+        final full = ++polls % _fullRefreshEvery == 0;
+        final rows = await _rawUnits(since: full ? null : _sinceMark);
+        if (rows.isEmpty) continue; // ничего не поменялось
+        _sinceMark = _maxUpdatedAt(rows) ?? _sinceMark;
+        if (full) byId.clear(); // полное обновление заменяет весь фонд
+        absorb(rows);
+        yield _sorted(byId.values);
+      } on ApiException {
+        // Сеть моргнула или сессия истекла — попробуем на следующем круге.
+      }
+    }
   }
 
   /// Превращает 422-ответ сервера в [LimitExceeded] (FR-07.9).
@@ -209,16 +340,10 @@ class ApiPanoramaRepository implements PanoramaRepository {
     required String unitId,
     required ManagerModel manager,
     ClientModel? client,
-    required DateTime dateFrom,
-    required DateTime dateTo,
+    int days = 3,
   }) => _unitAction(
     '/units/$unitId/book',
-    {
-      'manager_id': manager.id,
-      'client_id': client?.id,
-      'date_from': dateFrom.toIso8601String(),
-      'date_to': dateTo.toIso8601String(),
-    },
+    {'client_id': client?.id, 'days': days.clamp(1, 30)},
   );
 
   @override
@@ -253,6 +378,14 @@ class ApiPanoramaRepository implements PanoramaRepository {
   }) async => UnitModel.fromJson(
     await _api.post('/units/$unitId/status', body: {'status': status.wire}),
   );
+
+  @override
+  Future<void> requestExtend({
+    required String unitId,
+    required ManagerModel manager,
+  }) async {
+    await _api.post('/units/$unitId/extend-request');
+  }
 
   @override
   Future<UnitModel> extendBooking({

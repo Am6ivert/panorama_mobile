@@ -15,6 +15,7 @@ import '../../../shared/widgets/confirm_dialog.dart';
 import '../../search/providers/search_filter_provider.dart';
 import 'client_pick_sheet.dart';
 import 'unit_plan.dart';
+import '../../../core/utils/api_action.dart';
 
 /// Карточка квартиры (FR-06). Кнопки зависят от статуса и от того, является ли
 /// пользователь ответственным менеджером или администратором. Денежных
@@ -65,7 +66,14 @@ class UnitSheet extends ConsumerWidget {
               _Specs(unit: unit),
               const SizedBox(height: 14),
               _Actions(unit: unit, mine: mine, isAdmin: isAdmin),
-              if (unit.history.isNotEmpty) _History(unit: unit),
+              // История не приходит в списке фонда — подтягиваем её отдельно
+              // при открытии карточки.
+              ref.watch(unitDetailsProvider(unit.id)).maybeWhen(
+                    data: (full) => full.history.isEmpty
+                        ? const SizedBox.shrink()
+                        : _History(unit: full),
+                    orElse: () => const SizedBox.shrink(),
+                  ),
             ],
           ),
         ),
@@ -495,13 +503,14 @@ class _Actions extends ConsumerWidget {
 
     final messenger = ScaffoldMessenger.of(context);
     try {
-      final days = dateRange.end.difference(dateRange.start).inDays;
+      // Тот же расчёт и те же границы, что уходят на сервер, иначе в
+      // сообщении будет один срок, а в базе другой.
+      final days = dateRange.end.difference(dateRange.start).inDays.clamp(1, 30);
       await ref.read(panoramaRepositoryProvider).book(
         unitId: unit.id,
         manager: manager,
         client: pick.client,
-        dateFrom: dateRange.start,
-        dateTo: dateRange.end,
+        days: days,
       );
       ref.invalidate(dealsProvider);
       if (context.mounted) Navigator.of(context).pop();
@@ -531,9 +540,13 @@ class _Actions extends ConsumerWidget {
       if (!ok || !context.mounted) return;
     }
     final messenger = ScaffoldMessenger.of(context);
-    await ref
-        .read(panoramaRepositoryProvider)
-        .release(unitId: unit.id, manager: manager);
+    final done = await runApi(
+      context,
+      () => ref
+          .read(panoramaRepositoryProvider)
+          .release(unitId: unit.id, manager: manager),
+    );
+    if (done == null) return;
     if (context.mounted) Navigator.of(context).pop();
     _snack(messenger, 'Квартира снова свободна', 'Кв. №${unit.number} в фонде');
   }
@@ -542,9 +555,13 @@ class _Actions extends ConsumerWidget {
     final manager = ref.read(currentUserProvider);
     if (manager == null) return;
     final messenger = ScaffoldMessenger.of(context);
-    await ref
-        .read(panoramaRepositoryProvider)
-        .sendToDesign(unitId: unit.id, manager: manager);
+    final done = await runApi(
+      context,
+      () => ref
+          .read(panoramaRepositoryProvider)
+          .sendToDesign(unitId: unit.id, manager: manager),
+    );
+    if (done == null) return;
     ref.invalidate(dealsProvider);
     if (context.mounted) Navigator.of(context).pop();
     _snack(
@@ -566,9 +583,13 @@ class _Actions extends ConsumerWidget {
     );
     if (!ok || !context.mounted) return;
     final messenger = ScaffoldMessenger.of(context);
-    await ref
-        .read(panoramaRepositoryProvider)
-        .confirmSale(unitId: unit.id, admin: admin);
+    final done = await runApi(
+      context,
+      () => ref
+          .read(panoramaRepositoryProvider)
+          .confirmSale(unitId: unit.id, admin: admin),
+    );
+    if (done == null) return;
     ref.invalidate(dealsProvider);
     if (context.mounted) Navigator.of(context).pop();
     _snack(messenger, 'Продажа подтверждена', 'Кв. №${unit.number} продана.');
@@ -578,9 +599,13 @@ class _Actions extends ConsumerWidget {
     final admin = ref.read(currentUserProvider);
     if (admin == null) return;
     final messenger = ScaffoldMessenger.of(context);
-    await ref
-        .read(panoramaRepositoryProvider)
-        .extendBooking(unitId: unit.id, admin: admin);
+    final done = await runApi(
+      context,
+      () => ref
+          .read(panoramaRepositoryProvider)
+          .extendBooking(unitId: unit.id, admin: admin),
+    );
+    if (done == null) return;
     if (context.mounted) Navigator.of(context).pop();
     _snack(messenger, 'Бронь продлена', 'Кв. №${unit.number} — +3 дня.');
   }
@@ -593,9 +618,13 @@ class _Actions extends ConsumerWidget {
     final by = ref.read(currentUserProvider);
     if (by == null) return;
     final messenger = ScaffoldMessenger.of(context);
-    await ref
-        .read(panoramaRepositoryProvider)
-        .setStatus(unitId: unit.id, status: status, by: by);
+    final done = await runApi(
+      context,
+      () => ref
+          .read(panoramaRepositoryProvider)
+          .setStatus(unitId: unit.id, status: status, by: by),
+    );
+    if (done == null) return;
     if (context.mounted) Navigator.of(context).pop();
     _snack(messenger, 'Статус изменён', 'Кв. №${unit.number} — ${status.label}.');
   }
@@ -604,9 +633,15 @@ class _Actions extends ConsumerWidget {
     final from = ref.read(currentUserProvider);
     if (from == null) return;
     final messenger = ScaffoldMessenger.of(context);
-    await ref
-        .read(panoramaRepositoryProvider)
-        .messageHolder(unitId: unit.id, from: from);
+    // messageHolder возвращает void, поэтому оборачиваем в bool: значение
+    // типа void сравнить с null нельзя.
+    final done = await runApi(context, () async {
+      await ref
+          .read(panoramaRepositoryProvider)
+          .messageHolder(unitId: unit.id, from: from);
+      return true;
+    });
+    if (done == null) return;
     _snack(
       messenger,
       'Запрос отправлен',
@@ -614,11 +649,25 @@ class _Actions extends ConsumerWidget {
     );
   }
 
-  void _requestExtend(BuildContext context, WidgetRef ref) => _snack(
-    ScaffoldMessenger.of(context),
-    'Запрос отправлен администратору',
-    'Продление брони кв. №${unit.number} подтверждает администратор.',
-  );
+  /// Раньше кнопка только показывала уведомление, но ничего не отправляла —
+  /// администратор о просьбе не узнавал.
+  Future<void> _requestExtend(BuildContext context, WidgetRef ref) async {
+    final manager = ref.read(currentUserProvider);
+    if (manager == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final done = await runApi(context, () async {
+      await ref
+          .read(panoramaRepositoryProvider)
+          .requestExtend(unitId: unit.id, manager: manager);
+      return true;
+    });
+    if (done == null) return;
+    _snack(
+      messenger,
+      'Запрос отправлен администратору',
+      'Продление брони кв. №${unit.number} подтверждает администратор.',
+    );
+  }
 
   void _similar(BuildContext context, WidgetRef ref) {
     ref.read(searchFilterProvider.notifier).seedFrom(unit);

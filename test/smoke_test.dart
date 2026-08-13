@@ -41,7 +41,7 @@ void main() {
   });
 
   testWidgets('шахматка открывается и карточка квартиры тоже', (tester) async {
-    await login(tester, 'azamat');
+    await login(tester, 'marat');
 
     await tester.tap(find.text('Шахматка').first);
     await tester.pumpAndSettle();
@@ -59,7 +59,7 @@ void main() {
   });
 
   testWidgets('реестр: переключение вкладок и поиск', (tester) async {
-    await login(tester, 'azamat');
+    await login(tester, 'marat');
     await tester.tap(find.text('Реестр').first);
     await tester.pumpAndSettle();
 
@@ -99,7 +99,7 @@ void main() {
   });
 
   testWidgets('продавец не видит вход в админку', (tester) async {
-    await login(tester, 'azamat');
+    await login(tester, 'marat');
     expect(find.byIcon(Icons.admin_panel_settings_outlined), findsNothing);
   });
 }

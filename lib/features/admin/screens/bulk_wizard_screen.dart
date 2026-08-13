@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,6 +13,7 @@ import '../../../shared/widgets/app_header.dart';
 import '../../../shared/widgets/choice_chip_bar.dart';
 import '../../../shared/widgets/section_title.dart';
 import '../widgets/create_complex_sheet.dart';
+import '../../../core/utils/api_action.dart';
 
 /// Черновик одной группы этажей в UI.
 class _GroupDraft {
@@ -237,10 +240,16 @@ class _BulkWizardScreenState extends ConsumerState<BulkWizardScreen> {
     setState(() => _complexId = complex.id);
   }
 
+  /// Ключ повторной отправки: живёт до успешного создания, поэтому повтор
+  /// после ошибки не создаёт блок второй раз (FR-03.7).
+  String? _idempotencyKey;
+
   Future<void> _create() async {
     final admin = ref.read(currentUserProvider);
-    if (admin == null || _complexId == null) return;
+    if (admin == null || _complexId == null || _saving) return;
     setState(() => _saving = true);
+    _idempotencyKey ??=
+        '${DateTime.now().microsecondsSinceEpoch}-${Random().nextInt(1 << 32)}';
 
     final spec = BulkBlockSpec(
       complexId: _complexId!,
@@ -248,6 +257,7 @@ class _BulkWizardScreenState extends ConsumerState<BulkWizardScreen> {
       startNumber: _startNumber,
       technicalFloors: _technicalFloors,
       skipNumbers: _skipNumbers,
+      idempotencyKey: _idempotencyKey,
       groups: [
         for (final g in _groups)
           FloorGroupSpec(
@@ -258,10 +268,15 @@ class _BulkWizardScreenState extends ConsumerState<BulkWizardScreen> {
       ],
     );
 
-    final created =
-        await ref.read(panoramaRepositoryProvider).bulkCreateBlock(spec, by: admin);
+    final created = await runApi(
+      context,
+      () => ref.read(panoramaRepositoryProvider).bulkCreateBlock(spec, by: admin),
+    );
     if (!mounted) return;
     setState(() => _saving = false);
+    if (created == null) return; // ошибку пользователь уже увидел
+    _idempotencyKey = null; // успех: следующая отправка будет новой операцией
+    ref.invalidate(complexesProvider);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Создано $created квартир в блоке ${spec.blockName}')),
     );

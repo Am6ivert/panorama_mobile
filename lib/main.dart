@@ -32,7 +32,8 @@ class PanoramaApp extends StatelessWidget {
     title: 'Panorama',
     debugShowCheckedModeBanner: false,
     theme: AppTheme.light,
-    initialRoute: AppRoutes.login,
+    navigatorKey: AppRouter.navigatorKey,
+    initialRoute: AppRoutes.splash,
     onGenerateRoute: AppRouter.onGenerateRoute,
   );
 }

@@ -76,7 +76,7 @@ class AppHeader extends ConsumerWidget {
                   ],
                 ),
               ),
-              if (effectiveTrailing != null) effectiveTrailing,
+              ?effectiveTrailing,
             ],
           ),
           if (bottom != null) ...[const SizedBox(height: 13), bottom!],

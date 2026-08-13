@@ -6,6 +6,11 @@
 BEGIN;
 
 -- Роли -----------------------------------------------------------------------
+-- Компания по умолчанию ------------------------------------------------------
+-- Демо-данные ниже принадлежат ей. Вторую компанию заводит db/new_org.sql.
+INSERT INTO organizations (code, name) VALUES ('panorama', 'Панорама')
+ON CONFLICT DO NOTHING;
+
 INSERT INTO roles (code, title) VALUES
     ('manager', 'Менеджер'),
     ('admin',   'Администратор')
@@ -31,23 +36,32 @@ INSERT INTO dictionaries ("group", code, title, sort) VALUES
 ON CONFLICT ("group", code) DO NOTHING;
 
 -- Настройки ------------------------------------------------------------------
-INSERT INTO settings (key, value) VALUES
-    ('booking_days',          '3'),   -- срок брони по умолчанию (FR-07.6)
-    ('booking_limit',         '5'),   -- активных броней на менеджера (FR-07.9)
-    ('work_limit',            '5'),   -- квартир «в работе» на менеджера
-    ('min_client_version',    '1.0.0')-- принудительное обновление клиента
-ON CONFLICT (key) DO NOTHING;
+INSERT INTO settings (org_id, key, value)
+SELECT o.id, d.key, d.value
+FROM organizations o
+CROSS JOIN (VALUES
+    ('booking_days',          '3'),    -- срок брони по умолчанию (FR-07.6)
+    ('booking_limit',         '5'),    -- активных броней на менеджера (FR-07.9)
+    ('work_limit',            '5'),    -- квартир «в работе» на менеджера
+    ('min_client_version',    '1.0.0') -- принудительное обновление клиента
+) AS d(key, value)
+WHERE o.code = 'panorama'
+ON CONFLICT (org_id, key) DO NOTHING;
 
 -- Пользователи (пароль 0000, хеш bcrypt через pgcrypto) ----------------------
 -- Администратор должен создать реальные учётки и сменить пароли.
 WITH new_users AS (
-    INSERT INTO users (full_name, login, phone, password_hash, must_change_password)
-    VALUES
-      ('Динара Ибраимова',    'admin',  '+996 555 00-11-22', crypt('0000', gen_salt('bf')), false),
-      ('Азамат Кубанычбеков', 'azamat', '+996 555 10-22-30', crypt('0000', gen_salt('bf')), false),
-      ('Эльвира Садыкова',    'elvira', '+996 700 41-08-19', crypt('0000', gen_salt('bf')), false),
-      ('Нурлан Осмонов',      'nurlan', '+996 559 77-13-04', crypt('0000', gen_salt('bf')), false),
-      ('Бекзат Жумалиев',     'bekzat', '+996 772 60-55-21', crypt('0000', gen_salt('bf')), false)
+    INSERT INTO users (org_id, full_name, login, phone, password_hash, must_change_password)
+    SELECT o.id, v.full_name, v.login, v.phone, crypt('0000', gen_salt('bf')), false
+    FROM organizations o,
+         (VALUES
+            ('Динара Ибраимова',    'admin',  '+996 555 00-11-22'),
+            ('Азамат Кубанычбеков', 'azamat', '+996 555 10-22-30'),
+            ('Эльвира Садыкова',    'elvira', '+996 700 41-08-19'),
+            ('Нурлан Осмонов',      'nurlan', '+996 559 77-13-04'),
+            ('Бекзат Жумалиев',     'bekzat', '+996 772 60-55-21')
+         ) AS v(full_name, login, phone)
+    WHERE o.code = 'panorama'
     ON CONFLICT DO NOTHING
     RETURNING id, login
 )
@@ -58,22 +72,24 @@ FROM new_users;
 -- Пример объекта, блока и фонда квартир --------------------------------------
 -- Показывает генерацию как в мастере массового создания (FR-03).
 WITH admin AS (
-    SELECT id FROM users WHERE login = 'admin'
+    SELECT id, org_id FROM users WHERE login = 'admin'
 ),
 cx AS (
-    INSERT INTO complexes (name, address, deadline, segment, created_by)
-    SELECT 'Панорама Сити', 'ул. Ахунбаева, 121', 'сдача 2 кв. 2027', 'бизнес', id
+    INSERT INTO complexes (org_id, name, address, deadline, segment, created_by)
+    SELECT org_id, 'Панорама Сити', 'ул. Ахунбаева, 121', 'сдача 2 кв. 2027',
+           'бизнес', id
     FROM admin
-    RETURNING id
+    RETURNING id, org_id
 ),
 bl AS (
-    INSERT INTO blocks (complex_id, name, floors, units_per_floor, created_by)
-    SELECT cx.id, 'А', 16, 6, admin.id FROM cx, admin
-    RETURNING id, complex_id
+    INSERT INTO blocks (org_id, complex_id, name, floors, units_per_floor, created_by)
+    SELECT cx.org_id, cx.id, 'А', 16, 6, admin.id FROM cx, admin
+    RETURNING id, complex_id, org_id
 )
 INSERT INTO apartments
-    (block_id, complex_id, floor, position, number, rooms, area, status, created_by)
+    (org_id, block_id, complex_id, floor, position, number, rooms, area, status, created_by)
 SELECT
+    bl.org_id,
     bl.id,
     bl.complex_id,
     f.floor,

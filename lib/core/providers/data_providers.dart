@@ -15,8 +15,22 @@ import '../models/unit_status.dart';
 import '../models/user_role.dart';
 import '../network/api_client.dart';
 import '../notifications/notification_service.dart';
+import '../router/app_router.dart';
 
-final apiClientProvider = Provider<ApiClient>((ref) => ApiClient());
+final apiClientProvider = Provider<ApiClient>((ref) {
+  final client = ApiClient();
+  // Сервер ответил 401: сессия истекла, отозвана или учётку заблокировали —
+  // сбрасываем пользователя и возвращаем на экран входа.
+  client.onUnauthorized = () {
+    if (ref.read(currentUserProvider) == null) return;
+    ref.read(currentUserProvider.notifier).state = null;
+    AppRouter.navigatorKey.currentState?.pushNamedAndRemoveUntil(
+      AppRoutes.login,
+      (_) => false,
+    );
+  };
+  return client;
+});
 
 /// Сервис системных/браузерных уведомлений (push уровня ОС, пока приложение
 /// открыто). Создаётся один раз на приложение.
@@ -95,6 +109,16 @@ final visibleDealsProvider = Provider<List<DealModel>>((ref) {
 /// взял квартиру в работу, забронировал или закрыл продажу (FR-05.5).
 final unitsProvider = StreamProvider<List<UnitModel>>(
   (ref) => ref.read(panoramaRepositoryProvider).watchUnits(),
+);
+
+/// Карточка квартиры целиком, вместе с историей.
+///
+/// В списке фонда истории нет — она грузится только при открытии карточки.
+/// autoDispose обязателен: без него история осталась бы в кэше навсегда и при
+/// повторном открытии карточки показывала бы устаревшие события.
+final unitDetailsProvider =
+    FutureProvider.autoDispose.family<UnitModel, String>(
+  (ref, unitId) => ref.read(panoramaRepositoryProvider).fetchUnit(unitId),
 );
 
 /// Квартиры конкретного ЖК.

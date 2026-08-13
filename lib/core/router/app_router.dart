@@ -6,13 +6,16 @@ import '../../features/admin/screens/bulk_wizard_screen.dart';
 import '../../features/admin/screens/table_editor_screen.dart';
 import '../../features/admin/screens/users_screen.dart';
 import '../../features/auth/screens/login_screen.dart';
+import '../../features/auth/screens/splash_screen.dart';
 import '../../features/board/screens/board_screen.dart';
 import '../../features/profile/screens/profile_screen.dart';
 import '../../features/search/screens/search_screen.dart';
 import '../../features/shell/screens/home_shell.dart';
 
 abstract final class AppRoutes {
-  static const login = '/';
+  /// Стартовый экран: пробует восстановить сессию сохранённым токеном.
+  static const splash = '/';
+  static const login = '/login';
   static const home = '/home';
   static const board = '/board';
   static const similar = '/similar';
@@ -32,8 +35,13 @@ class EditorArgs {
 }
 
 abstract final class AppRouter {
+  /// Нужен, чтобы увести пользователя на экран входа из кода вне дерева
+  /// виджетов — например когда сервер ответил 401 (сессия истекла).
+  static final navigatorKey = GlobalKey<NavigatorState>();
+
   static Route<dynamic> onGenerateRoute(RouteSettings settings) {
     return switch (settings.name) {
+      AppRoutes.splash => _fade(const SplashScreen()),
       AppRoutes.login => _fade(const LoginScreen()),
       AppRoutes.home => _fade(const HomeShell()),
       AppRoutes.board => _slide(

@@ -1,7 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/constants/app_colors.dart';
 import '../../core/providers/data_providers.dart';
 import '../../core/router/app_router.dart';
 import 'initials_avatar.dart';
@@ -48,6 +49,8 @@ class GlobalNavigation extends ConsumerWidget {
   }
 
   void _logout(BuildContext context, WidgetRef ref) {
+    // Отзываем токен на сервере, ответ не ждём — экран входа открываем сразу.
+    unawaited(ref.read(panoramaRepositoryProvider).logout());
     ref.read(currentUserProvider.notifier).state = null;
     Navigator.of(context).pushNamedAndRemoveUntil(
       AppRoutes.login,

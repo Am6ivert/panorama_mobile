@@ -6,6 +6,7 @@ import '../../../core/constants/app_text_styles.dart';
 import '../../../core/models/complex_model.dart';
 import '../../../core/providers/data_providers.dart';
 import '../../../shared/widgets/choice_chip_bar.dart';
+import '../../../core/utils/api_action.dart';
 
 /// Форма нового объекта (ЖК) — FR-02.1. Возвращает созданный объект или null.
 Future<ComplexModel?> createComplexSheet(BuildContext context) =>
@@ -134,13 +135,21 @@ class _CreateComplexSheetState extends ConsumerState<_CreateComplexSheet> {
     final by = ref.read(currentUserProvider);
     if (by == null) return;
     setState(() => _saving = true);
-    final complex = await ref.read(panoramaRepositoryProvider).createComplex(
-          name: _name.text.trim(),
-          address: _address.text.trim(),
-          deadline: _deadline.text.trim(),
-          segment: _segment,
-          by: by,
-        );
+    final complex = await runApi(
+      context,
+      () => ref.read(panoramaRepositoryProvider).createComplex(
+            name: _name.text.trim(),
+            address: _address.text.trim(),
+            deadline: _deadline.text.trim(),
+            segment: _segment,
+            by: by,
+          ),
+    );
+    if (!mounted) return;
+    if (complex == null) {
+      setState(() => _saving = false); // ошибку пользователь уже увидел
+      return;
+    }
     ref.invalidate(complexesProvider);
     if (mounted) Navigator.of(context).pop(complex);
   }

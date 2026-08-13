@@ -48,7 +48,7 @@ void main() {
         ..sort((a, b) => b.floor.compareTo(a.floor))).first;
     });
 
-    await login(tester, 'azamat');
+    await login(tester, 'marat');
     await tester.tap(find.text('Шахматка').first);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Панорама Сити'));
@@ -66,7 +66,7 @@ void main() {
     await tester.tap(takeBtn);
     await tester.pumpAndSettle();
 
-    // Свой клиент Айбек Сыдыков закреплён за m1/azamat.
+    // Свой клиент Айбек Сыдыков закреплён за m1/marat.
     await tester.tap(find.text('Айбек Сыдыков'));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
@@ -80,7 +80,7 @@ void main() {
   });
 
   testWidgets('менеджер заводит клиента через вкладку «Клиенты»', (tester) async {
-    await login(tester, 'azamat');
+    await login(tester, 'marat');
     var before = 0;
     await tester.runAsync(() async {
       before = (await repository.fetchClients()).length;
@@ -138,12 +138,12 @@ void main() {
     late UnitModel free;
     await tester.runAsync(() async {
       final users = await repository.fetchUsers();
-      final azamat = users.firstWhere((u) => u.login == 'azamat');
+      final marat = users.firstWhere((u) => u.login == 'marat');
       final client = (await repository.fetchClients())
-          .firstWhere((c) => c.sellerId == azamat.id);
+          .firstWhere((c) => c.sellerId == marat.id);
       free = (await repository.fetchUnits())
           .firstWhere((u) => u.status == UnitStatus.free);
-      await repository.book(unitId: free.id, manager: azamat, client: client);
+      await repository.book(unitId: free.id, manager: marat, client: client);
     });
 
     // Входит ДРУГОЙ менеджер и видит уведомление о брони.
@@ -161,8 +161,8 @@ void main() {
   ) async {
     await tester.runAsync(() async {
       await repository.createUser(
-        name: 'Марат Осмонов',
-        login: 'marat',
+        name: 'Тимур Асанов',
+        login: 'timur',
         phone: '+996 555 12-34-56',
         role: UserRole.manager,
       );
@@ -170,7 +170,7 @@ void main() {
 
     await tester.pumpWidget(app());
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField).first, 'marat');
+    await tester.enterText(find.byType(TextField).first, 'timur');
     await tester.enterText(find.byType(TextField).at(1), '0000');
     await tester.tap(find.text('Войти'));
     await tester.pumpAndSettle();
@@ -193,11 +193,11 @@ void main() {
 
     await tester.runAsync(() async {
       expect(
-        await repository.login(login: 'marat', password: 'secret1'),
+        await repository.login(login: 'timur', password: 'secret1'),
         isA<LoginOk>(),
       );
       expect(
-        await repository.login(login: 'marat', password: '0000'),
+        await repository.login(login: 'timur', password: '0000'),
         isA<LoginFailed>(),
       );
     });

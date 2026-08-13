@@ -24,9 +24,20 @@ class ApiClient {
 
   final Dio _dio;
 
-  /// Токен авторизации — ставится после входа.
+  /// Вызывается, когда сервер ответил 401 (сессия истекла или отозвана) —
+  /// приложение должно вернуть пользователя на экран входа.
+  void Function()? onUnauthorized;
+
+  /// Есть ли действующий токен в заголовках.
+  bool get hasToken => _dio.options.headers.containsKey('Authorization');
+
+  /// Токен авторизации — ставится после входа. Дальше сервер сам определяет,
+  /// кто автор запроса: идентификаторы в теле запроса он игнорирует.
   void setToken(String token) =>
       _dio.options.headers['Authorization'] = 'Bearer $token';
+
+  /// Забыть токен (выход, истёкшая сессия).
+  void clearToken() => _dio.options.headers.remove('Authorization');
 
   Future<List<Map<String, dynamic>>> getList(String path) async {
     try {
@@ -34,6 +45,16 @@ class ApiClient {
       return (response.data ?? const [])
           .cast<Map<String, dynamic>>()
           .toList(growable: false);
+    } on DioException catch (e) {
+      throw _toApiException(e);
+    }
+  }
+
+  /// GET одного объекта (в отличие от [getList], который ждёт массив).
+  Future<Map<String, dynamic>> getOne(String path) async {
+    try {
+      final response = await _dio.get<Map<String, dynamic>>(path);
+      return response.data ?? const {};
     } on DioException catch (e) {
       throw _toApiException(e);
     }
@@ -52,10 +73,15 @@ class ApiClient {
   }
 
   ApiException _toApiException(DioException e) {
+    final status = e.response?.statusCode;
     final data = e.response?.data;
     final message = data is Map && data['error'] is String
         ? data['error'] as String
         : (e.message ?? 'Ошибка сети');
-    return ApiException(e.response?.statusCode, message);
+    if (status == 401) {
+      clearToken();
+      onUnauthorized?.call();
+    }
+    return ApiException(status, message);
   }
 }

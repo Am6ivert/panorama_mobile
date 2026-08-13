@@ -8,6 +8,7 @@ import '../../../core/models/unit_status.dart';
 import '../../../core/providers/data_providers.dart';
 import '../../../core/router/app_router.dart';
 import '../../../shared/widgets/app_header.dart';
+import '../../../core/utils/api_action.dart';
 
 /// Табличный редактор квартир блока (FR-04): выделение и групповое изменение.
 /// Квартиры с активной бронью/сделкой исключаются из массовых операций.
@@ -157,13 +158,18 @@ class _TableEditorScreenState extends ConsumerState<TableEditorScreen> {
     final repo = ref.read(panoramaRepositoryProvider);
     final all = ref.read(unitsProvider).value ?? const <UnitModel>[];
     final targets = all.where((u) => _selected.contains(u.id)).toList();
-    for (final u in targets) {
-      await repo.updateUnit(transform(u), by: by);
-    }
-    if (!mounted) return;
+    // Если сервер отклонит одну из правок, цикл прерывался молча: снекбар не
+    // показывался, выделение оставалось, причина была не видна.
+    final done = await runApi(context, () async {
+      for (final u in targets) {
+        await repo.updateUnit(transform(u), by: by);
+      }
+      return targets.length;
+    });
+    if (!mounted || done == null) return;
     setState(_selected.clear);
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Обновлено ${targets.length} квартир')),
+      SnackBar(content: Text('Обновлено $done квартир')),
     );
   }
 

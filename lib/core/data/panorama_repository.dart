@@ -57,7 +57,12 @@ class BulkBlockSpec {
     required this.groups,
     this.technicalFloors = const {},
     this.skipNumbers = const {},
+    this.idempotencyKey,
   });
+
+  /// Ключ повторной отправки (FR-03.7). Один и тот же ключ при повторе после
+  /// ошибки не создаёт блок второй раз — сервер вернёт прежний результат.
+  final String? idempotencyKey;
 
   final String complexId;
   final String blockName;
@@ -79,6 +84,15 @@ abstract interface class PanoramaRepository {
   // --- Аутентификация и пользователи (FR-01) ---
 
   Future<LoginResult> login({required String login, required String password});
+
+  /// Завершить сессию: сервер отзывает токен, клиент его забывает.
+  Future<void> logout();
+
+  /// Восстановить сессию сохранённым токеном при запуске приложения.
+  ///
+  /// Возвращает пользователя, если токен ещё действителен, иначе `null`
+  /// (сессия истекла, отозвана, учётка заблокирована или токена нет).
+  Future<ManagerModel?> restoreSession();
 
   Future<List<ManagerModel>> fetchUsers();
 
@@ -153,6 +167,12 @@ abstract interface class PanoramaRepository {
 
   Future<List<UnitModel>> fetchUnits();
 
+  /// Одна квартира целиком, вместе с историей.
+  ///
+  /// В списке фонда истории нет: она нужна только в карточке, а в списке
+  /// умножала объём ответа на число событий по каждой квартире.
+  Future<UnitModel> fetchUnit(String unitId);
+
   Stream<List<UnitModel>> watchUnits();
 
   /// Закрепить квартиру за менеджером на время показа. Данные клиента
@@ -163,13 +183,15 @@ abstract interface class PanoramaRepository {
     ClientModel? client,
   });
 
-  /// Поставить бронь с указанием диапазона дат. Клиент опционален.
+  /// Поставить бронь на [days] дней. Клиент опционален.
+  ///
+  /// Раньше принимался диапазон дат, хотя сервер работает со сроком в днях:
+  /// диапазон всё равно сворачивался в число, а тесты про это не знали.
   Future<UnitModel> book({
     required String unitId,
     required ManagerModel manager,
     ClientModel? client,
-    required DateTime dateFrom,
-    required DateTime dateTo,
+    int days = 3,
   });
 
   /// Вернуть квартиру в свободный фонд.
@@ -195,6 +217,13 @@ abstract interface class PanoramaRepository {
     required String unitId,
     required UnitStatus status,
     required ManagerModel by,
+  });
+
+  /// Попросить администратора продлить бронь (FR-07.8): менеджер сам продлить
+  /// не может, администратор получает уведомление.
+  Future<void> requestExtend({
+    required String unitId,
+    required ManagerModel manager,
   });
 
   /// Продлить бронь (только администратор, FR-07.8).

@@ -41,7 +41,7 @@ class _AddClientSheetState extends ConsumerState<AddClientSheet> {
   final _request = TextEditingController();
   final _customRooms = TextEditingController();
 
-  Set<int> _selectedRooms = {2};
+  final Set<int> _selectedRooms = {2};
   String? _source;
   bool _saving = false;
 

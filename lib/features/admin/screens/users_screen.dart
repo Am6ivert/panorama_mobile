@@ -11,6 +11,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../shared/widgets/app_header.dart';
 import '../../../shared/widgets/confirm_dialog.dart';
 import '../../../shared/widgets/initials_avatar.dart';
+import '../../../core/utils/api_action.dart';
 
 /// Управление учётными записями (FR-01): создание, роли, блокировка.
 class UsersScreen extends ConsumerWidget {
@@ -41,7 +42,7 @@ class UsersScreen extends ConsumerWidget {
                     _UserCard(
                       user: user,
                       onBlock: () => _toggleBlock(context, ref, user),
-                      onRole: () => _toggleRole(ref, user),
+                      onRole: () => _toggleRole(context, ref, user),
                     ),
                 ],
               ),
@@ -65,22 +66,32 @@ class UsersScreen extends ConsumerWidget {
         confirmLabel: 'Заблокировать',
         danger: true,
       );
-      if (!ok) return;
+      if (!ok || !context.mounted) return;
     }
-    await ref
-        .read(panoramaRepositoryProvider)
-        .setUserBlocked(userId: user.id, blocked: !user.blocked);
-    ref.invalidate(usersProvider);
+    final updated = await runApi(
+      context,
+      () => ref
+          .read(panoramaRepositoryProvider)
+          .setUserBlocked(userId: user.id, blocked: !user.blocked),
+    );
+    if (updated != null) ref.invalidate(usersProvider);
   }
 
-  Future<void> _toggleRole(WidgetRef ref, ManagerModel user) async {
+  Future<void> _toggleRole(
+    BuildContext context,
+    WidgetRef ref,
+    ManagerModel user,
+  ) async {
     final next = user.role == UserRole.admin
         ? UserRole.manager
         : UserRole.admin;
-    await ref
-        .read(panoramaRepositoryProvider)
-        .setUserRole(userId: user.id, role: next);
-    ref.invalidate(usersProvider);
+    final updated = await runApi(
+      context,
+      () => ref
+          .read(panoramaRepositoryProvider)
+          .setUserRole(userId: user.id, role: next),
+    );
+    if (updated != null) ref.invalidate(usersProvider);
   }
 
   Future<void> _create(BuildContext context, WidgetRef ref) async {
@@ -412,14 +423,20 @@ class _CreateUserSheetState extends ConsumerState<_CreateUserSheet> {
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _saving = true);
-    await ref
-        .read(panoramaRepositoryProvider)
-        .createUser(
-          name: _name.text.trim(),
-          login: _login.text.trim(),
-          phone: _phone.text.trim(),
-          role: _role,
-        );
-    if (mounted) Navigator.of(context).pop(true);
+    final created = await runApi(
+      context,
+      () => ref.read(panoramaRepositoryProvider).createUser(
+            name: _name.text.trim(),
+            login: _login.text.trim(),
+            phone: _phone.text.trim(),
+            role: _role,
+          ),
+    );
+    if (!mounted) return;
+    if (created == null) {
+      setState(() => _saving = false);
+      return;
+    }
+    Navigator.of(context).pop(true);
   }
 }

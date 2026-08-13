@@ -8,6 +8,7 @@ import '../../../core/data/panorama_repository.dart';
 import '../../../core/models/manager_model.dart';
 import '../../../core/providers/data_providers.dart';
 import '../../../core/router/app_router.dart';
+import '../../../core/utils/api_action.dart';
 
 /// Вход по логину и паролю (FR-01.1). Экрана регистрации нет —
 /// учётные записи создаёт администратор.
@@ -352,9 +353,17 @@ class _ChangePasswordSheetState extends ConsumerState<_ChangePasswordSheet> {
       _saving = true;
       _error = null;
     });
-    final updated = await ref
-        .read(panoramaRepositoryProvider)
-        .changePassword(userId: widget.user.id, newPassword: _password.text);
-    if (mounted) Navigator.of(context).pop(updated);
+    final updated = await runApi(
+      context,
+      () => ref
+          .read(panoramaRepositoryProvider)
+          .changePassword(userId: widget.user.id, newPassword: _password.text),
+    );
+    if (!mounted) return;
+    if (updated == null) {
+      setState(() => _saving = false); // без этого форму было не закрыть
+      return;
+    }
+    Navigator.of(context).pop(updated);
   }
 }

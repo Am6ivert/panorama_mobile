@@ -250,6 +250,26 @@ class MockPanoramaRepository implements PanoramaRepository {
   }
 
   @override
+  Future<void> logout() async {}
+
+  @override
+  Future<ManagerModel?> restoreSession() async => null;
+
+  @override
+  Future<UnitModel> fetchUnit(String unitId) async {
+    await _latency();
+    return _units.firstWhere((u) => u.id == unitId);
+  }
+
+  @override
+  Future<void> requestExtend({
+    required String unitId,
+    required ManagerModel manager,
+  }) async {
+    await _latency();
+  }
+
+  @override
   Future<List<ManagerModel>> fetchUsers() async {
     await _latency();
     return List.unmodifiable(_users);
@@ -590,16 +610,16 @@ class MockPanoramaRepository implements PanoramaRepository {
     required String unitId,
     required ManagerModel manager,
     ClientModel? client,
-    required DateTime dateFrom,
-    required DateTime dateTo,
+    int days = 3,
   }) async {
+    final dateFrom = DateTime.now();
+    final dateTo = dateFrom.add(Duration(days: days));
     _ensureUnderLimit(
       manager,
       UnitStatus.hold,
       AppConfig.bookingLimitPerManager,
       'активных броней',
     );
-    final days = dateTo.difference(dateFrom).inDays;
     final unit = await _apply(
       unitId,
       status: UnitStatus.hold,

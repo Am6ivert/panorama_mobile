@@ -83,5 +83,17 @@ class TxSession {
   }
 }
 
+/// SQLSTATE из исключения драйвера, если оно пришло от PostgreSQL.
+///
+/// Драйвер не экспортирует единый тип ошибки, поэтому читаем поле динамически.
+String? pgErrorCode(Object e) {
+  try {
+    final code = (e as dynamic).code;
+    return code is String ? code : null;
+  } catch (_) {
+    return null;
+  }
+}
+
 /// Псевдоним типа сессии postgres (TxSession принимает Session/TxSession).
 typedef TxSession$Runner = Session;

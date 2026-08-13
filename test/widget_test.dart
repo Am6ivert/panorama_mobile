@@ -35,7 +35,7 @@ void main() {
 
     expect(find.text('Войти'), findsOneWidget);
 
-    await tester.enterText(find.byType(TextField).first, 'azamat');
+    await tester.enterText(find.byType(TextField).first, 'marat');
     await tester.enterText(find.byType(TextField).at(1), '0000');
     await tester.tap(find.text('Войти'));
     await tester.pumpAndSettle();
@@ -48,7 +48,7 @@ void main() {
     await tester.pumpWidget(app());
     await tester.pumpAndSettle();
 
-    await tester.enterText(find.byType(TextField).first, 'azamat');
+    await tester.enterText(find.byType(TextField).first, 'marat');
     await tester.enterText(find.byType(TextField).at(1), 'wrong');
     await tester.tap(find.text('Войти'));
     await tester.pumpAndSettle();
