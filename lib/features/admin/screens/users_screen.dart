@@ -41,6 +41,7 @@ class UsersScreen extends ConsumerWidget {
                   for (final user in users)
                     _UserCard(
                       user: user,
+                      onEdit: () => _editUser(context, ref, user),
                       onBlock: () => _toggleBlock(context, ref, user),
                       onRole: () => _toggleRole(context, ref, user),
                     ),
@@ -149,11 +150,13 @@ void _editUser(BuildContext context, WidgetRef ref, ManagerModel user) async {
 class _UserCard extends StatelessWidget {
   const _UserCard({
     required this.user,
+    required this.onEdit,
     required this.onBlock,
     required this.onRole,
   });
 
   final ManagerModel user;
+  final VoidCallback onEdit;
   final VoidCallback onBlock;
   final VoidCallback onRole;
 
@@ -209,7 +212,7 @@ class _UserCard extends StatelessWidget {
           children: [
             Expanded(
               child: OutlinedButton(
-                onPressed: () => _editUser(context, ref, user),
+                onPressed: onEdit,
                 style: OutlinedButton.styleFrom(
                   minimumSize: const Size.fromHeight(42),
                   side: const BorderSide(color: AppColors.line),
@@ -633,6 +636,8 @@ class _EditUserSheetState extends ConsumerState<_EditUserSheet> {
       if (mounted) setState(() => _saving = false);
       return;
     }
+    // Пока шёл запрос, форму могли закрыть - показывать ошибку уже некому.
+    if (!mounted) return;
 
     // Если задан новый пароль, обновляем его отдельно
     if (newPwd.isNotEmpty) {
