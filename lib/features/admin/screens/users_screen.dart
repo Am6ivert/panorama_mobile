@@ -197,24 +197,25 @@ class _UserCard extends StatelessWidget {
         const SizedBox(height: 11),
         Row(
           children: [
-            Expanded(
-              child: OutlinedButton(
-                onPressed: onRole,
-                style: OutlinedButton.styleFrom(
-                  minimumSize: const Size.fromHeight(42),
-                  side: const BorderSide(color: AppColors.line),
-                  foregroundColor: AppColors.ink2,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(11),
+            if (user.role != UserRole.admin)
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: onRole,
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(42),
+                    side: const BorderSide(color: AppColors.line),
+                    foregroundColor: AppColors.ink2,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(11),
+                    ),
+                  ),
+                  child: const Text(
+                    'Сделать админом',
+                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
                   ),
                 ),
-                child: Text(
-                  user.role == UserRole.admin ? 'Сделать менеджером' : 'Сделать админом',
-                  style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
-                ),
               ),
-            ),
-            const SizedBox(width: 9),
+            if (user.role != UserRole.admin) const SizedBox(width: 9),
             Expanded(
               child: OutlinedButton(
                 onPressed: onBlock,
