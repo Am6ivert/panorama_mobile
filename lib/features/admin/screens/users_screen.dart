@@ -43,6 +43,7 @@ class UsersScreen extends ConsumerWidget {
                       user: user,
                       onBlock: () => _toggleBlock(context, ref, user),
                       onRole: () => _toggleRole(context, ref, user),
+                      onEdit: () => _editUser(context, ref, user),
                     ),
                 ],
               ),
@@ -103,6 +104,16 @@ class UsersScreen extends ConsumerWidget {
     );
     if (created == true) ref.invalidate(usersProvider);
   }
+
+  Future<void> _editUser(BuildContext context, WidgetRef ref, ManagerModel user) async {
+    final updated = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => _EditUserSheet(user: user),
+    );
+    if (updated == true) ref.invalidate(usersProvider);
+  }
 }
 
 class _AddButton extends StatelessWidget {
@@ -136,26 +147,18 @@ class _AddButton extends StatelessWidget {
   );
 }
 
-void _editUser(BuildContext context, WidgetRef ref, ManagerModel user) async {
-  final updated = await showModalBottomSheet<bool>(
-    context: context,
-    isScrollControlled: true,
-    showDragHandle: true,
-    builder: (_) => _EditUserSheet(user: user),
-  );
-  if (updated == true) ref.invalidate(usersProvider);
-}
-
 class _UserCard extends StatelessWidget {
   const _UserCard({
     required this.user,
     required this.onBlock,
     required this.onRole,
+    required this.onEdit,
   });
 
   final ManagerModel user;
   final VoidCallback onBlock;
   final VoidCallback onRole;
+  final VoidCallback onEdit;
 
   @override
   Widget build(BuildContext context) => Container(
@@ -209,7 +212,7 @@ class _UserCard extends StatelessWidget {
           children: [
             Expanded(
               child: OutlinedButton(
-                onPressed: () => _editUser(context, ref, user),
+                onPressed: onEdit,
                 style: OutlinedButton.styleFrom(
                   minimumSize: const Size.fromHeight(42),
                   side: const BorderSide(color: AppColors.line),
@@ -636,6 +639,7 @@ class _EditUserSheetState extends ConsumerState<_EditUserSheet> {
 
     // Если задан новый пароль, обновляем его отдельно
     if (newPwd.isNotEmpty) {
+      if (!mounted) return;
       final passwordUpdated = await runApi(
         context,
         () => ref.read(panoramaRepositoryProvider).changePassword(
