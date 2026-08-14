@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -29,9 +31,13 @@ class NotificationsScreen extends ConsumerWidget {
           trailing: unread == 0 || user == null
               ? null
               : _MarkAllButton(
-                  onTap: () => ref
+                  // Пометка «прочитано» ничего не меняет для пользователя,
+                  // если не удалась, — но необработанная ошибка «брошенного»
+                  // запроса роняет зону, поэтому гасим её явно.
+                  onTap: () => unawaited(ref
                       .read(panoramaRepositoryProvider)
-                      .markAllNotificationsRead(user.id),
+                      .markAllNotificationsRead(user.id)
+                      .catchError((_) {})),
                 ),
         ),
         Expanded(
@@ -56,7 +62,10 @@ class NotificationsScreen extends ConsumerWidget {
 
   void _open(BuildContext context, WidgetRef ref, AppNotification item) {
     if (!item.read) {
-      ref.read(panoramaRepositoryProvider).markNotificationRead(item.id);
+      unawaited(ref
+          .read(panoramaRepositoryProvider)
+          .markNotificationRead(item.id)
+          .catchError((_) {}));
     }
     if (item.unitId != null) {
       showModalBottomSheet<void>(

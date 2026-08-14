@@ -42,6 +42,7 @@ class ApiPanoramaRepository implements PanoramaRepository {
       );
       final token = res['token'] as String?;
       if (token != null) {
+        _sinceMark = null; // фонд другой компании - границу дельты обнуляем
         _api.setToken(token);
         await _store.write(token); // чтобы не входить заново после перезапуска
       }
@@ -60,6 +61,7 @@ class ApiPanoramaRepository implements PanoramaRepository {
     } on ApiException {
       // Токен мог уже протухнуть — выход всё равно локально завершаем.
     } finally {
+      _sinceMark = null;
       _api.clearToken();
       await _store.clear();
     }
@@ -69,6 +71,7 @@ class ApiPanoramaRepository implements PanoramaRepository {
   Future<ManagerModel?> restoreSession() async {
     final token = await _store.read();
     if (token == null) return null;
+    _sinceMark = null;
     _api.setToken(token);
     try {
       final user = ManagerModel.fromJson(await _api.getOne('/auth/me'));
@@ -105,6 +108,7 @@ class ApiPanoramaRepository implements PanoramaRepository {
       });
       final token = res['token'] as String?;
       if (token != null) {
+        _sinceMark = null;
         _api.setToken(token);
         await _store.write(token);
       }
@@ -183,10 +187,14 @@ class ApiPanoramaRepository implements PanoramaRepository {
   Future<ManagerModel> changePassword({
     required String userId,
     required String newPassword,
+    String? currentPassword,
   }) async => ManagerModel.fromJson(
     await _api.post(
       '/users/$userId/password',
-      body: {'new_password': newPassword},
+      body: {
+        'new_password': newPassword,
+        'current_password': ?currentPassword,
+      },
     ),
   );
 
@@ -305,6 +313,14 @@ class ApiPanoramaRepository implements PanoramaRepository {
   /// Максимальный `updated_at`, полученный от сервера: граница для дельты.
   /// Берём именно серверное значение, чтобы не зависеть от часов устройства.
   String? _sinceMark;
+
+  /// Сбрасывает границу дельты при смене пользователя.
+  ///
+  /// Метка относится к фонду конкретной компании. Если она переживала вход
+  /// под другой учётной записью, новому пользователю приходили только те
+  /// квартиры, которые изменились позже чужой отметки: блоки, созданные
+  /// раньше, не появлялись вовсе. Выглядело это как «квартиры не создались»,
+  /// хотя в базе они были.
 
   Future<List<Map<String, dynamic>>> _rawUnits({String? since}) => _api.getList(
         since == null

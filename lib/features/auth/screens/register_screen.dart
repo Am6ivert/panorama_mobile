@@ -87,7 +87,6 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
               const SizedBox(height: 8),
               AuthInput(
                 controller: _name,
-                hint: 'Союзбеков Эржан Уланович',
                 textCapitalization: TextCapitalization.words,
                 textInputAction: TextInputAction.next,
               ),
@@ -107,7 +106,6 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
               const SizedBox(height: 8),
               AuthInput(
                 controller: _phone,
-                hint: '0700 123456',
                 keyboardType: TextInputType.phone,
                 inputFormatters: [
                   FilteringTextInputFormatter.allow(RegExp(r'[0-9+\s()-]')),
@@ -116,16 +114,15 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
               ),
               const SizedBox(height: 6),
               const Text(
-                'Иностранный номер — с кодом страны: +7 700 1234567',
+                'Иностранный номер — с кодом страны',
                 style: TextStyle(fontSize: 12, color: AppColors.ink3),
               ),
               const SizedBox(height: 18),
 
-              const AuthLabel('ЛОГИН'),
+              const AuthLabel('ЛОГИН (ЛАТИНИЦЕЙ)'),
               const SizedBox(height: 8),
               AuthInput(
                 controller: _login,
-                hint: 'латиницей, например erzhan',
                 inputFormatters: [
                   FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9._-]')),
                 ],
@@ -133,11 +130,10 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
               ),
               const SizedBox(height: 18),
 
-              const AuthLabel('ПАРОЛЬ'),
+              const AuthLabel('ПАРОЛЬ (ОТ 6 СИМВОЛОВ)'),
               const SizedBox(height: 8),
               AuthInput(
                 controller: _password,
-                hint: 'не короче 6 символов',
                 obscure: true,
                 textInputAction: TextInputAction.next,
               ),
@@ -147,7 +143,6 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
               const SizedBox(height: 8),
               AuthInput(
                 controller: _confirm,
-                hint: '••••••',
                 obscure: true,
                 onSubmitted: (_) => _submit(),
               ),

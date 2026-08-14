@@ -27,7 +27,7 @@ class AuthLabel extends StatelessWidget {
       );
 }
 
-class AuthInput extends StatelessWidget {
+class AuthInput extends StatefulWidget {
   const AuthInput({
     super.key,
     required this.controller,
@@ -42,6 +42,9 @@ class AuthInput extends StatelessWidget {
 
   final TextEditingController controller;
   final String? hint;
+
+  /// Поле пароля: текст скрыт, но его можно показать глазком. Без этого
+  /// опечатку в пароле не видно, а вводят его с телефона.
   final bool obscure;
   final TextInputType? keyboardType;
   final List<TextInputFormatter>? inputFormatters;
@@ -50,22 +53,42 @@ class AuthInput extends StatelessWidget {
   final ValueChanged<String>? onSubmitted;
 
   @override
+  State<AuthInput> createState() => _AuthInputState();
+}
+
+class _AuthInputState extends State<AuthInput> {
+  late bool _hidden = widget.obscure;
+
+  @override
   Widget build(BuildContext context) => TextField(
-        controller: controller,
-        obscureText: obscure,
-        keyboardType: keyboardType,
-        inputFormatters: inputFormatters,
-        textCapitalization: textCapitalization,
-        textInputAction: textInputAction,
-        onSubmitted: onSubmitted,
+        controller: widget.controller,
+        obscureText: _hidden,
+        keyboardType: widget.keyboardType,
+        inputFormatters: widget.inputFormatters,
+        textCapitalization: widget.textCapitalization,
+        textInputAction: widget.textInputAction,
+        onSubmitted: widget.onSubmitted,
         style: const TextStyle(fontSize: 15, color: Colors.white),
         decoration: InputDecoration(
-          hintText: hint,
+          hintText: widget.hint,
           hintStyle: const TextStyle(color: AppColors.ink3),
           filled: true,
           fillColor: Colors.white.withValues(alpha: 0.08),
           contentPadding:
               const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+          suffixIcon: widget.obscure
+              ? IconButton(
+                  icon: Icon(
+                    _hidden
+                        ? Icons.visibility_outlined
+                        : Icons.visibility_off_outlined,
+                    size: 20,
+                    color: AppColors.onDarkSub,
+                  ),
+                  tooltip: _hidden ? 'Показать пароль' : 'Скрыть пароль',
+                  onPressed: () => setState(() => _hidden = !_hidden),
+                )
+              : null,
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(13),
             borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.12)),

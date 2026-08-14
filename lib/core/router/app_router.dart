@@ -13,6 +13,7 @@ import '../../features/board/screens/board_screen.dart';
 import '../../features/profile/screens/profile_screen.dart';
 import '../../features/search/screens/search_screen.dart';
 import '../../features/shell/screens/home_shell.dart';
+import 'route_guard.dart';
 
 abstract final class AppRoutes {
   /// Стартовый экран: пробует восстановить сессию сохранённым токеном.
@@ -49,27 +50,50 @@ abstract final class AppRouter {
   static final navigatorKey = GlobalKey<NavigatorState>();
 
   static Route<dynamic> onGenerateRoute(RouteSettings settings) {
+    // Аргументы приходят из кода приложения, но в веб-версии по адресу можно
+    // попасть и без них - поэтому проверяем тип, а не приводим вслепую.
+    final args = settings.arguments;
+
     return switch (settings.name) {
       AppRoutes.splash => _fade(const SplashScreen()),
       AppRoutes.login => _fade(const LoginScreen()),
-      AppRoutes.home => _fade(const HomeShell()),
-      AppRoutes.board => _slide(
-        BoardScreen(complexId: settings.arguments as String? ?? ''),
-      ),
-      AppRoutes.similar => _slide(const SearchScreen()),
-      AppRoutes.admin => _slide(const AdminScreen()),
-      AppRoutes.bulkWizard => _slide(const BulkWizardScreen()),
-      AppRoutes.users => _slide(const UsersScreen()),
-      AppRoutes.audit => _slide(const AuditScreen()),
-      AppRoutes.profile => _slide(const ProfileScreen()),
       AppRoutes.register => _slide(const RegisterScreen()),
-      AppRoutes.superadmin => _fade(const SuperadminScreen()),
-      AppRoutes.tableEditor => _slide(
-        TableEditorScreen(args: settings.arguments as EditorArgs),
+
+      // Всё остальное - только для вошедших, а часть ещё и по роли.
+      AppRoutes.home => _fade(_guard(Access.signedIn, const HomeShell())),
+      AppRoutes.board => _slide(
+        _guard(Access.signedIn,
+            BoardScreen(complexId: args is String ? args : '')),
       ),
+      AppRoutes.similar =>
+        _slide(_guard(Access.signedIn, const SearchScreen())),
+      AppRoutes.profile =>
+        _slide(_guard(Access.signedIn, const ProfileScreen())),
+
+      AppRoutes.admin => _slide(_guard(Access.admin, const AdminScreen())),
+      AppRoutes.bulkWizard =>
+        _slide(_guard(Access.admin, const BulkWizardScreen())),
+      AppRoutes.users => _slide(_guard(Access.admin, const UsersScreen())),
+      AppRoutes.audit => _slide(_guard(Access.admin, const AuditScreen())),
+
+      // Без аргументов редактор открывать нечем: раньше приведение типа
+      // роняло приложение, теперь возвращаем в админку.
+      AppRoutes.tableEditor => _slide(
+          args is EditorArgs
+              ? _guard(Access.admin, TableEditorScreen(args: args))
+              : _guard(Access.admin, const AdminScreen()),
+        ),
+
+      AppRoutes.superadmin =>
+        _fade(_guard(Access.superadmin, const SuperadminScreen())),
+
+      // Неизвестный адрес - на вход, а не белый экран.
       _ => _fade(const LoginScreen()),
     };
   }
+
+  static Widget _guard(Access access, Widget page) =>
+      Guard(access: access, child: page);
 
   static PageRouteBuilder<void> _fade(Widget page) => PageRouteBuilder(
     pageBuilder: (_, _, _) => page,

@@ -7,13 +7,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/data/panorama_repository.dart';
+import '../../../core/models/manager_model.dart';
 import '../../../core/providers/data_providers.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/utils/api_action.dart';
 import '../../../shared/widgets/app_header.dart';
 import '../../../shared/widgets/choice_chip_bar.dart';
 import '../../../shared/widgets/section_title.dart';
 import '../widgets/create_complex_sheet.dart';
-import '../../../core/utils/api_action.dart';
 
 /// Черновик одной группы этажей в UI.
 class _GroupDraft {
@@ -68,6 +69,14 @@ class _BulkWizardScreenState extends ConsumerState<BulkWizardScreen> {
       if (group != null) count += group.template.length;
     }
     return count;
+  }
+
+  /// Чего не хватает для создания. null - можно создавать.
+  String? get _blocker {
+    if (_complexId == null) return 'Сначала выберите объект';
+    if (_blockName.text.trim().isEmpty) return 'Введите название блока';
+    if (_previewCount == 0) return 'Нет ни одной квартиры';
+    return null;
   }
 
   _GroupDraft? _groupFor(int floor) {
@@ -126,6 +135,9 @@ class _BulkWizardScreenState extends ConsumerState<BulkWizardScreen> {
                         child: _MiniField(
                           controller: _blockName,
                           label: 'Название блока',
+                          // Без этого подпись на кнопке не обновлялась бы,
+                          // пока не тронешь что-то ещё.
+                          onChanged: (_) => setState(() {}),
                         ),
                       ),
                       const SizedBox(width: 10),
@@ -213,7 +225,7 @@ class _BulkWizardScreenState extends ConsumerState<BulkWizardScreen> {
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: FilledButton(
-                    onPressed: _saving || _previewCount == 0 ? null : _create,
+                    onPressed: _saving || _blocker != null ? null : _create,
                     child: _saving
                         ? const SizedBox(
                             width: 20,
@@ -223,7 +235,9 @@ class _BulkWizardScreenState extends ConsumerState<BulkWizardScreen> {
                               color: Colors.white,
                             ),
                           )
-                        : Text('Создать $_previewCount квартир'),
+                        // Серая кнопка без объяснения выглядит как поломка,
+                        // поэтому на ней написано, чего не хватает.
+                        : Text(_blocker ?? 'Создать $_previewCount квартир'),
                   ),
                 ),
               ],
@@ -243,6 +257,11 @@ class _BulkWizardScreenState extends ConsumerState<BulkWizardScreen> {
   /// Ключ повторной отправки: живёт до успешного создания, поэтому повтор
   /// после ошибки не создаёт блок второй раз (FR-03.7).
   String? _idempotencyKey;
+
+  /// Для какой операции выдан ключ. Сменили объект или название блока - это
+  /// уже другая операция, и прежний ключ заставил бы сервер вернуть результат
+  /// предыдущей вместо создания новой.
+  String? _idempotencyFor;
 
   Future<void> _create() async {
     final admin = ref.read(currentUserProvider);
@@ -267,8 +286,30 @@ class _BulkWizardScreenState extends ConsumerState<BulkWizardScreen> {
     if (_saving) return;
 
     setState(() => _saving = true);
+    try {
+      await _send(admin);
+    } catch (e) {
+      // Сбой подготовки запроса: показываем его, а не оставляем спиннер.
+      if (mounted) {
+        setState(() => _saving = false);
+        showApiError(ScaffoldMessenger.of(context), 'Не удалось создать', '$e');
+      }
+    }
+  }
+
+  Future<void> _send(ManagerModel admin) async {
+    // nextInt(1 << 32) в вебе бросает RangeError: там сдвиг на 32 не даёт
+    // 4 294 967 296, и верхняя граница оказывается недопустимой. Исключение
+    // вылетало до отправки запроса - кнопка навсегда оставалась в состоянии
+    // «сохраняю», а на сервер не уходило ничего. Граница ниже безопасна и на
+    // мобильном, и в вебе.
+    final operation = '$_complexId|${_blockName.text.trim().toLowerCase()}';
+    if (_idempotencyFor != operation) {
+      _idempotencyKey = null;
+      _idempotencyFor = operation;
+    }
     _idempotencyKey ??=
-        '${DateTime.now().microsecondsSinceEpoch}-${Random().nextInt(1 << 32)}';
+        '${DateTime.now().microsecondsSinceEpoch}-${Random().nextInt(0x3FFFFFFF)}';
 
     final spec = BulkBlockSpec(
       complexId: _complexId!,
@@ -287,6 +328,8 @@ class _BulkWizardScreenState extends ConsumerState<BulkWizardScreen> {
       ],
     );
 
+    // runApi ловит ошибки самого запроса, но не сбои подготовки данных.
+    // Раньше такой сбой оставлял кнопку крутиться вечно и молча.
     final created = await runApi(
       context,
       () => ref.read(panoramaRepositoryProvider).bulkCreateBlock(spec, by: admin),
@@ -296,6 +339,9 @@ class _BulkWizardScreenState extends ConsumerState<BulkWizardScreen> {
     if (created == null) return; // ошибку пользователь уже увидел
     _idempotencyKey = null; // успех: следующая отправка будет новой операцией
     ref.invalidate(complexesProvider);
+    // Фонд опрашивается раз в 15 секунд - без этого созданные квартиры
+    // появлялись с задержкой, и казалось, что мастер не сработал.
+    ref.invalidate(unitsProvider);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Создано $created квартир в блоке ${spec.blockName}')),
     );

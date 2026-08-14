@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -365,47 +366,142 @@ class _AdminRow extends StatelessWidget {
       );
 }
 
-/// Выбор срока продления.
-class _MonthsSheet extends StatelessWidget {
+/// Срок продления: месяц по умолчанию, любое другое число — вводом.
+///
+/// Раньше здесь был список из четырёх кнопок. Сроки у компаний разные, и
+/// список либо не покрывал нужный, либо рос бесконечно.
+class _MonthsSheet extends StatefulWidget {
   const _MonthsSheet({required this.orgName});
 
   final String orgName;
 
   @override
+  State<_MonthsSheet> createState() => _MonthsSheetState();
+}
+
+class _MonthsSheetState extends State<_MonthsSheet> {
+  final _months = TextEditingController(text: '1');
+  String? _error;
+
+  @override
+  void dispose() {
+    _months.dispose();
+    super.dispose();
+  }
+
+  int? get _value => int.tryParse(_months.text.trim());
+
+  @override
   Widget build(BuildContext context) => SafeArea(
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(18, 4, 18, 20),
+          padding: EdgeInsets.fromLTRB(
+            18,
+            4,
+            18,
+            20 + MediaQuery.viewInsetsOf(context).bottom,
+          ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Продлить «$orgName»', style: AppTextStyles.h1),
+              Text('Продлить «${widget.orgName}»', style: AppTextStyles.h1),
               const SizedBox(height: 6),
               const Text(
                 'Если подписка ещё действует, срок добавится к её концу.',
                 style: TextStyle(fontSize: 13, color: AppColors.ink2),
               ),
-              const SizedBox(height: 16),
-              for (final months in const [1, 3, 6, 12])
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.of(context).pop(months),
-                      child: Text(_label(months)),
+              const SizedBox(height: 18),
+              const Text('НА СКОЛЬКО МЕСЯЦЕВ', style: AppTextStyles.section),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  SizedBox(
+                    width: 96,
+                    child: TextField(
+                      controller: _months,
+                      autofocus: true,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.digitsOnly,
+                        LengthLimitingTextInputFormatter(2),
+                      ],
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.ink,
+                      ),
+                      onChanged: (_) => setState(() => _error = null),
+                      onSubmitted: (_) => _submit(),
+                      decoration: InputDecoration(
+                        filled: true,
+                        fillColor: AppColors.bg,
+                        contentPadding:
+                            const EdgeInsets.symmetric(vertical: 12),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: AppColors.line),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: AppColors.line),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: AppColors.brand),
+                        ),
+                      ),
                     ),
                   ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      _hint,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        height: 1.35,
+                        color: AppColors.ink2,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              if (_error != null) ...[
+                const SizedBox(height: 10),
+                Text(
+                  _error!,
+                  style: const TextStyle(fontSize: 13, color: AppColors.error),
                 ),
+              ],
+              const SizedBox(height: 18),
+              FilledButton(
+                onPressed: _submit,
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(50),
+                ),
+                child: const Text('Продлить'),
+              ),
             ],
           ),
         ),
       );
 
-  static String _label(int months) => switch (months) {
-        1 => '1 месяц',
-        3 => '3 месяца',
-        6 => '6 месяцев',
-        _ => '12 месяцев',
-      };
+  /// Подсказка словами: «3» само по себе ни о чём не говорит.
+  String get _hint {
+    final months = _value;
+    if (months == null || months < 1) return 'Введите число от 1 до 60';
+    final until = DateTime.now();
+    final date = DateTime(until.year, until.month + months, until.day);
+    return 'примерно до ${date.day.toString().padLeft(2, '0')}.'
+        '${date.month.toString().padLeft(2, '0')}.${date.year}';
+  }
+
+  void _submit() {
+    final months = _value;
+    if (months == null || months < 1 || months > 60) {
+      setState(() => _error = 'Срок — от 1 до 60 месяцев');
+      return;
+    }
+    Navigator.of(context).pop(months);
+  }
 }

@@ -49,14 +49,23 @@ class GlobalNavigation extends ConsumerWidget {
   }
 
   void _navigateTo(BuildContext context, String route) {
-    final currentRoute = ModalRoute.of(context)?.settings.name;
-    if (currentRoute == route) return; // уже на этом экране
-    Navigator.of(context).pushNamed(route);
+    final navigator = Navigator.of(context);
+    if (ModalRoute.of(context)?.settings.name == route) return; // уже здесь
+    // Экраны из шапки - одноуровневые: админка, профиль и обратно. Простой
+    // pushNamed складывал их стопкой (админка > профиль > админка > ...), и
+    // «назад» приходилось нажимать столько же раз, сколько было переходов.
+    // Возвращаемся к оболочке приложения и открываем нужный экран поверх неё.
+    navigator.popUntil((route) => route.isFirst);
+    navigator.pushNamed(route);
   }
 
   void _logout(BuildContext context, WidgetRef ref) {
     // Отзываем токен на сервере, ответ не ждём — экран входа открываем сразу.
-    unawaited(ref.read(panoramaRepositoryProvider).logout());
+    // Ошибку гасим: без сети выход всё равно должен состояться локально,
+    // а необработанное исключение из «брошенного» запроса роняет зону.
+    unawaited(
+      ref.read(panoramaRepositoryProvider).logout().catchError((_) {}),
+    );
     // Без этого данные компании останутся в кэше и достанутся следующему
     // вошедшему — в том числе админу другой компании.
     resetCompanyData(ref.invalidate);

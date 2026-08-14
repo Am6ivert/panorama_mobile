@@ -377,7 +377,9 @@ class _CreateUserSheetState extends ConsumerState<_CreateUserSheet> {
             const SizedBox(height: 10),
             Row(
               children: [
-                for (final role in UserRole.values) ...[
+                // Только выдаваемые роли: суперадминистратор один на весь
+                // сервис и из приложения не создаётся.
+                for (final role in UserRole.assignable) ...[
                   Expanded(
                     child: GestureDetector(
                       onTap: () => setState(() => _role = role),
@@ -408,7 +410,8 @@ class _CreateUserSheetState extends ConsumerState<_CreateUserSheet> {
                       ),
                     ),
                   ),
-                  if (role != UserRole.values.last) const SizedBox(width: 9),
+                  if (role != UserRole.assignable.last)
+                    const SizedBox(width: 9),
                 ],
               ],
             ),

@@ -15,6 +15,7 @@ import '../models/unit_event.dart';
 import '../models/unit_model.dart';
 import '../models/unit_status.dart';
 import '../models/user_role.dart';
+import '../network/api_client.dart';
 import 'panorama_repository.dart';
 
 /// Демо-данные до подключения API Panorama. Без денежных значений (ТЗ 1.3).
@@ -382,10 +383,20 @@ class MockPanoramaRepository implements PanoramaRepository {
   Future<ManagerModel> changePassword({
     required String userId,
     required String newPassword,
+    String? currentPassword,
   }) async {
     await _latency();
-    _passwords[userId] = newPassword;
     final i = _users.indexWhere((u) => u.id == userId);
+    if (i < 0) throw const ApiException(404, 'Учётная запись не найдена');
+    // Те же правила, что и на сервере: свой пароль подтверждается текущим,
+    // кроме обязательной первой смены.
+    if (currentPassword != null && !_users[i].mustChangePassword) {
+      final expected = _passwords[userId] ?? AppConfig.defaultPassword;
+      if (currentPassword != expected) {
+        throw const ApiException(403, 'Текущий пароль указан неверно');
+      }
+    }
+    _passwords[userId] = newPassword;
     final updated = _users[i].copyWith(mustChangePassword: false);
     _users[i] = updated;
     _log(updated, 'Смена пароля', updated.name);

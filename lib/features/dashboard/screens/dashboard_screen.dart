@@ -69,7 +69,7 @@ class DashboardScreen extends ConsumerWidget {
                     // Блок пропал при переделке интерфейса и вернулся сюда:
                     // фонд по статусам — первое, что должен видеть отдел
                     // продаж (FR-10.1).
-                    const SectionTitle('Фонд по статусам'),
+                    const SectionTitle('Сколько квартир в каждом статусе'),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: _StatusGrid(stats: stats),
@@ -180,7 +180,12 @@ class _StatusGrid extends StatelessWidget {
       (AppColors.sold, 'Продано', stats.sold),
       (AppColors.offMarket, 'Не в продаже', stats.offMarket),
     ];
-    return GridView.count(
+    // Ширину ограничиваем: на планшете и в веб-версии три плитки растягивались
+    // на весь экран и превращались в огромные пустые прямоугольники.
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 560),
+        child: GridView.count(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       crossAxisCount: 3,
@@ -224,6 +229,8 @@ class _StatusGrid extends StatelessWidget {
             ),
           ),
       ],
+        ),
+      ),
     );
   }
 }

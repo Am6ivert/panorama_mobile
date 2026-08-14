@@ -3,19 +3,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
-import '../../../core/data/panorama_repository.dart';
 import '../../../core/models/complex_model.dart';
 import '../../../core/models/unit_model.dart';
 import '../../../core/models/unit_status.dart';
 import '../../../core/providers/data_providers.dart';
 import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/utils/api_action.dart';
 import '../../../core/utils/time_format.dart';
 import '../../../shared/widgets/confirm_dialog.dart';
 import '../../search/providers/search_filter_provider.dart';
 import 'client_pick_sheet.dart';
 import 'unit_plan.dart';
-import '../../../core/utils/api_action.dart';
 
 /// Карточка квартиры (FR-06). Кнопки зависят от статуса и от того, является ли
 /// пользователь ответственным менеджером или администратором. Денежных
@@ -450,21 +449,24 @@ class _Actions extends ConsumerWidget {
     if (manager == null) return;
 
     final messenger = ScaffoldMessenger.of(context);
-    try {
-      final updated = await ref
+    // Через runApi, а не голый try: раньше ловился только лимит, а отказ
+    // сервера (чужой клиент, изменившийся статус, истёкшая подписка,
+    // оборванная сеть) уходил в никуда — кнопка выглядела нерабочей.
+    final updated = await runApi(
+      context,
+      () => ref
           .read(panoramaRepositoryProvider)
-          .takeToWork(unitId: unit.id, manager: manager, client: pick.client);
-      ref.invalidate(dealsProvider);
-      if (context.mounted) Navigator.of(context).pop();
-      _snack(
-        messenger,
-        'Квартира закреплена за вами',
-        'Кв. №${unit.number}'
-            '${updated.heldUntil == null ? '' : ' · ${TimeFormat.until(updated.heldUntil!)}'}.',
-      );
-    } on LimitExceeded catch (e) {
-      _snack(messenger, 'Лимит достигнут', e.message);
-    }
+          .takeToWork(unitId: unit.id, manager: manager, client: pick.client),
+    );
+    if (updated == null) return; // причину пользователь уже увидел
+    ref.invalidate(dealsProvider);
+    if (context.mounted) Navigator.of(context).pop();
+    _snack(
+      messenger,
+      'Квартира закреплена за вами',
+      'Кв. №${unit.number}'
+          '${updated.heldUntil == null ? '' : ' · ${TimeFormat.until(updated.heldUntil!)}'}.',
+    );
   }
 
   Future<void> _book(BuildContext context, WidgetRef ref) async {
@@ -502,26 +504,27 @@ class _Actions extends ConsumerWidget {
     if (dateRange == null || !context.mounted) return;
 
     final messenger = ScaffoldMessenger.of(context);
-    try {
-      // Тот же расчёт и те же границы, что уходят на сервер, иначе в
-      // сообщении будет один срок, а в базе другой.
-      final days = dateRange.end.difference(dateRange.start).inDays.clamp(1, 30);
-      await ref.read(panoramaRepositoryProvider).book(
-        unitId: unit.id,
-        manager: manager,
-        client: pick.client,
-        days: days,
-      );
-      ref.invalidate(dealsProvider);
-      if (context.mounted) Navigator.of(context).pop();
-      _snack(
-        messenger,
-        'Бронь оформлена',
-        'Кв. №${unit.number} забронирована на $days дн. Офис уведомлён.',
-      );
-    } on LimitExceeded catch (e) {
-      _snack(messenger, 'Лимит достигнут', e.message);
-    }
+    // Тот же расчёт и те же границы, что уходят на сервер, иначе в
+    // сообщении будет один срок, а в базе другой.
+    final days = dateRange.end.difference(dateRange.start).inDays.clamp(1, 30);
+    // См. _take: отказ сервера должен быть виден, а не проглатываться.
+    final done = await runApi(
+      context,
+      () => ref.read(panoramaRepositoryProvider).book(
+            unitId: unit.id,
+            manager: manager,
+            client: pick.client,
+            days: days,
+          ),
+    );
+    if (done == null) return; // причину пользователь уже увидел
+    ref.invalidate(dealsProvider);
+    if (context.mounted) Navigator.of(context).pop();
+    _snack(
+      messenger,
+      'Бронь оформлена',
+      'Кв. №${unit.number} забронирована на $days дн. Офис уведомлён.',
+    );
   }
 
   Future<void> _release(BuildContext context, WidgetRef ref) async {

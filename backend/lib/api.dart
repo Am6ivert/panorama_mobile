@@ -675,7 +675,42 @@ class Api {
     if (denied != null) return denied;
     final me = _me(request);
     final b = await readJson(request);
+    // Роль приходит от клиента, поэтому список допустимых - здесь, а не там.
+    // Суперадминистратора из приложения не создать: он один на весь сервис.
     final role = b['role'] == 'admin' ? 'admin' : 'manager';
+
+    // Те же правила, что и при регистрации: иначе через этот путь в базу
+    // попадали пустые имена, а null превращался в 500 про миграции.
+    final name = (b['name'] as String?)?.trim() ?? '';
+    final login = (b['login'] as String?)?.trim().toLowerCase() ?? '';
+    final phone = _normalizePhone((b['phone'] as String?) ?? '');
+    if (name.length < 3 || name.length > 120) {
+      return jsonError(422, 'Укажите фамилию, имя и отчество');
+    }
+    if (!RegExp(r'^[a-z0-9._-]{3,32}$').hasMatch(login)) {
+      return jsonError(
+          422,
+          'Логин: латинские буквы, цифры, точка, дефис или подчёркивание, '
+          'от 3 до 32 символов');
+    }
+    final phoneDigits = phone.replaceAll('+', '');
+    if (phoneDigits.length < 7 || phoneDigits.length > 15) {
+      return jsonError(422, 'Укажите номер телефона');
+    }
+
+    final taken = await db.one(
+      '''SELECT bool_or(lower(login) = @l) AS login_taken,
+                bool_or(phone = @p)        AS phone_taken
+         FROM users WHERE deleted_at IS NULL AND (lower(login) = @l OR phone = @p)''',
+      {'l': login, 'p': phone},
+    );
+    if (taken?['login_taken'] == true) {
+      return jsonError(409, 'Такой логин уже занят — придумайте другой');
+    }
+    if (taken?['phone_taken'] == true) {
+      return jsonError(409, 'Этот номер уже используется другим сотрудником');
+    }
+
     final row = await db.one(
       '''WITH nu AS (
            INSERT INTO users (org_id, full_name, login, phone, password_hash,
@@ -689,9 +724,9 @@ class Api {
          )
          SELECT id::text AS id FROM nu''',
       {
-        'name': b['name'],
-        'login': b['login'],
-        'phone': b['phone'],
+        'name': name,
+        'login': login,
+        'phone': phone,
         'role': role,
         'by': me.userId,
         'org': me.orgId,
@@ -777,6 +812,26 @@ class Api {
     // учётке, считается временным: пользователь обязан сменить его при входе
     // (FR-01.3). Раньше флаг снимался в обоих случаях.
     final isReset = id != me.userId;
+
+    // Смену СВОЕГО пароля подтверждаем текущим. Без этого достаточно было
+    // добраться до чужого открытого приложения (или до его токена), чтобы
+    // сменить пароль, не зная старого: приложение спрашивало текущий пароль,
+    // но сервер его не проверял, и запрос в обход приложения проходил.
+    //
+    // Исключение — обязательная первая смена: временный пароль пользователь
+    // только что ввёл на экране входа, второй раз спрашивать его незачем.
+    if (!isReset) {
+      final self = await db.one(
+        '''SELECT must_change_password AS forced,
+                  (password_hash = crypt(@p, password_hash)) AS ok
+           FROM users WHERE id=@id AND org_id=@org AND deleted_at IS NULL''',
+        {'id': id, 'org': me.orgId, 'p': b['current_password'] as String? ?? ''},
+      );
+      if (self == null) return jsonError(404, 'Учётная запись не найдена');
+      if (self['forced'] != true && self['ok'] != true) {
+        return jsonError(403, 'Текущий пароль указан неверно');
+      }
+    }
     await db.query(
       '''UPDATE users SET password_hash = crypt(@p, gen_salt('bf')),
              must_change_password = @tmp, updated_at=now(), updated_by=@by,
@@ -858,7 +913,9 @@ class Api {
     if (denied != null) return denied;
     final me = _me(request);
     final b = await readJson(request);
-    final complexId = b['complex_id'] as String;
+    // Приведение вслепую превращало кривой запрос в 500 с системным текстом.
+    final complexId = (b['complex_id'] as String?)?.trim() ?? '';
+    if (complexId.isEmpty) return jsonError(422, 'Не указан объект');
     // Объект обязан принадлежать компании автора.
     final owns = await db.one(
       'SELECT 1 AS x FROM complexes WHERE id=@c AND org_id=@org AND deleted_at IS NULL',
@@ -882,19 +939,67 @@ class Api {
       }
     }
 
-    final blockName = b['block'] as String;
+    final blockName = (b['block'] as String?)?.trim() ?? '';
+    if (blockName.isEmpty) return jsonError(422, 'Не указано название блока');
+    if (blockName.length > 40) {
+      return jsonError(422, 'Название блока длиннее 40 символов');
+    }
+    // Имя блока уникально внутри объекта. Без этой проверки повторный запуск
+    // мастера с тем же названием упирался в уникальный индекс и возвращал
+    // «Такая запись уже существует» - по такому тексту непонятно, что делать,
+    // и выглядело это как неработающая кнопка.
+    final busy = await db.one(
+      '''SELECT 1 AS x FROM blocks
+         WHERE complex_id=@c AND lower(name)=lower(@n) AND deleted_at IS NULL''',
+      {'c': complexId, 'n': blockName},
+    );
+    if (busy != null) {
+      return jsonError(
+          409,
+          'Блок «$blockName» в этом объекте уже есть. '
+          'Задайте другое название блока.');
+    }
+
     final startNumber = (b['start_number'] as num?)?.toInt() ?? 1;
     final groups = (b['groups'] as List?) ?? const [];
-    final technical = ((b['technical_floors'] as List?) ?? const [])
-        .map((e) => (e as num).toInt())
+    if (groups.isEmpty) {
+      return jsonError(422, 'Не задано ни одной группы этажей');
+    }
+    // Ниже идёт цикл по этажам: без верхней границы запрос вида
+    // floor_to = 1000000 занял бы сервер надолго.
+    for (final g in groups) {
+      if (g is! Map) return jsonError(422, 'Неверный формат групп этажей');
+      final from = (g['floor_from'] as num?)?.toInt();
+      final to = (g['floor_to'] as num?)?.toInt();
+      final rooms = g['rooms'];
+      if (from == null || to == null || rooms is! List || rooms.isEmpty) {
+        return jsonError(422, 'В группе этажей не хватает данных');
+      }
+      if (from < 1 || to < from || to > 200) {
+        return jsonError(422, 'Этажи: от 1 до 200, и «по» не меньше «с»');
+      }
+      if (rooms.length > 40) {
+        return jsonError(422, 'Слишком много квартир на этаже (максимум 40)');
+      }
+      if (rooms.any((r) => r is! num || r < 0 || r > 9)) {
+        return jsonError(422, 'Комнатность — число от 0 до 9');
+      }
+    }
+    // Приведение вслепую ((e as num)) на строке в списке давало 500 вместо
+    // внятного отказа. Нечисловые значения просто отбрасываем.
+    Set<int> intSet(Object? raw) => ((raw as List?) ?? const [])
+        .whereType<num>()
+        .map((e) => e.toInt())
         .toSet();
-    final skip = ((b['skip_numbers'] as List?) ?? const [])
-        .map((e) => (e as num).toInt())
-        .toSet();
+    final technical = intSet(b['technical_floors']);
+    final skip = intSet(b['skip_numbers']);
 
-    const areaByRooms = {0: 31.0, 1: 42.0, 2: 60.0, 3: 84.0, 4: 114.0};
+    const areaByRooms = {
+      0: 31.0, 1: 42.0, 2: 60.0, 3: 84.0, 4: 114.0, 5: 138.0, 6: 165.0,
+    };
     const kitchenByRooms = {
-      0: 'кухня-ниша', 1: '12.4 м²', 2: '14.8 м²', 3: '16.2 м²', 4: '18.0 м²',
+      0: 'кухня-ниша', 1: '12.4 м²', 2: '14.8 м²', 3: '16.2 м²',
+      4: '18.0 м²', 5: '20.5 м²', 6: '24.0 м²',
     };
 
     // Гонка двух одинаковых запросов: второй упирается в уникальный ключ

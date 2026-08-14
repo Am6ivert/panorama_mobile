@@ -1,5 +1,6 @@
 import 'package:panorama_backend/auth.dart';
 import 'package:panorama_backend/db.dart';
+import 'package:shelf/shelf.dart';
 import 'package:test/test.dart';
 
 import 'support.dart';
@@ -151,6 +152,43 @@ void main() {
               .status,
           422);
     });
+
+    test('свой пароль не сменить, не зная текущего', () async {
+      final victim = await createOrg(api, 'pwd.self');
+      // Без текущего пароля — отказ, даже с действующим токеном.
+      expect(
+          (await api.post('/api/v1/users/${victim.managerId}/password',
+                  token: victim.managerToken, body: {'new_password': 'взлом1'}))
+              .status,
+          403);
+      // С неверным текущим — тоже отказ.
+      expect(
+          (await api.post('/api/v1/users/${victim.managerId}/password',
+                  token: victim.managerToken,
+                  body: {'new_password': 'взлом1', 'current_password': 'нет'}))
+              .status,
+          403);
+      // Старый пароль продолжает работать — смены не произошло.
+      expect(
+          (await api.post('/api/v1/auth/login',
+                  body: {'login': victim.managerLogin, 'password': testPassword}))
+              .status,
+          200);
+    });
+
+    test('администратор сбрасывает чужой пароль без текущего', () async {
+      final org2 = await createOrg(api, 'pwd.reset');
+      expect(
+          (await api.post('/api/v1/users/${org2.managerId}/password',
+                  token: org2.adminToken, body: {'new_password': 'выдан1'}))
+              .status,
+          200);
+      // Выданный администратором пароль — временный: его требуется сменить.
+      final res = await api.post('/api/v1/auth/login',
+          body: {'login': org2.managerLogin, 'password': 'выдан1'});
+      expect(res.status, 200);
+      expect((res.map['user'] as Map)['must_change_password'], true);
+    });
   });
 
   // ===========================================================================
@@ -249,6 +287,106 @@ void main() {
           (SELECT count(*) FROM deals d JOIN apartments a ON a.id=d.apartment_id
              WHERE a.org_id <> d.org_id) AS cross_links''');
       expect(row!['cross_links'], 0);
+    });
+  });
+
+  // ===========================================================================
+  group('Кривые запросы не роняют сервер', () {
+    late TestOrg org;
+    setUpAll(() async => org = await createOrg(api, 'junk'));
+
+    test('битый JSON — 400, а не 500', () async {
+      final res = await api.handler(Request(
+        'POST',
+        Uri.parse('http://localhost:8080/api/v1/complexes'),
+        headers: {
+          'Authorization': 'Bearer ${org.adminToken}',
+          'content-type': 'application/json',
+        },
+        body: '{это не json',
+      ));
+      expect(res.statusCode, 400);
+    });
+
+    test('пустое тело и пропущенные поля — 422 с понятным текстом', () async {
+      for (final body in [
+        <String, dynamic>{},
+        {'complex_id': ''},
+        {'complex_id': 'не-uuid', 'block': 'A'},
+      ]) {
+        final res =
+            await api.post('/api/v1/blocks/bulk', token: org.adminToken, body: body);
+        expect(res.status, anyOf(400, 404, 422), reason: '$body -> $res');
+        expect(res.error, isNotEmpty, reason: 'ошибка без текста: $res');
+        expect(res.error, isNot(contains('Exception')), reason: '$res');
+      }
+    });
+
+    test('мастер отвергает нелепые размеры вместо долгой работы', () async {
+      final complex = await api.post('/api/v1/complexes',
+          token: org.adminToken,
+          body: {'name': 'ЖК', 'address': '', 'deadline': '', 'segment': ''});
+      final complexId = complex.map['id'] as String;
+
+      Future<TestResponse> bulk(Map<String, dynamic> group) =>
+          api.post('/api/v1/blocks/bulk', token: org.adminToken, body: {
+            'complex_id': complexId,
+            'block': 'Б${uniqueSuffix()}',
+            'start_number': 1,
+            'groups': [group],
+            'technical_floors': <int>[],
+            'skip_numbers': <int>[],
+          });
+
+      // Миллион этажей, этажи наоборот, отрицательная комнатность,
+      // сотня квартир на этаже - всё это отказ, а не зависший сервер.
+      expect((await bulk({'floor_from': 1, 'floor_to': 1000000, 'rooms': [1]}))
+              .status,
+          422);
+      expect((await bulk({'floor_from': 10, 'floor_to': 2, 'rooms': [1]})).status,
+          422);
+      expect((await bulk({'floor_from': 1, 'floor_to': 2, 'rooms': [-3]})).status,
+          422);
+      expect(
+          (await bulk({
+            'floor_from': 1,
+            'floor_to': 2,
+            'rooms': List.filled(100, 1),
+          }))
+              .status,
+          422);
+      expect((await bulk({'floor_from': 1, 'floor_to': 2, 'rooms': <int>[]}))
+              .status,
+          422);
+
+      // Мусор вместо чисел в списках этажей/номеров — отказ или пропуск,
+      // но не 500 с системным текстом.
+      final junk = await api.post('/api/v1/blocks/bulk', token: org.adminToken,
+          body: {
+            'complex_id': complexId,
+            'block': 'В${uniqueSuffix()}',
+            'start_number': 1,
+            'groups': [
+              {'floor_from': 1, 'floor_to': 2, 'rooms': [1]}
+            ],
+            'technical_floors': ['первый', null],
+            'skip_numbers': ['тринадцать'],
+          });
+      expect(junk.status, isNot(500), reason: '$junk');
+    });
+
+    test('чужой длины и типы в полях пользователя — не 500', () async {
+      for (final body in <Map<String, dynamic>>[
+        {'name': 'Х', 'login': 'a', 'phone': '1', 'role': 'admin'},
+        {'name': 'Тест Тестов', 'login': 'x' * 200, 'phone': '0700111222',
+         'role': 'manager'},
+        {'name': 'Тест Тестов', 'login': 'ok${uniqueSuffix()}',
+         'phone': '0700111222', 'role': 'бог'},
+      ]) {
+        final res =
+            await api.post('/api/v1/users', token: org.adminToken, body: body);
+        expect(res.status, isNot(500), reason: '$body -> $res');
+      }
     });
   });
 
@@ -450,7 +588,11 @@ void main() {
       await setPlan(api, org, days: -30);
       expect(
           (await api.post('/api/v1/users/${org.managerId}/password',
-                  token: org.managerToken, body: {'new_password': 'secret1'}))
+                  token: org.managerToken,
+                  body: {
+                'new_password': 'secret1',
+                'current_password': testPassword,
+              }))
               .status,
           200);
       expect(

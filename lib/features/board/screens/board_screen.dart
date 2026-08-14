@@ -58,6 +58,30 @@ class _BoardScreenState extends ConsumerState<BoardScreen> {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('Ошибка загрузки: $e')),
         data: (list) {
+          // У новой компании объектов ещё нет, а на этот экран можно попасть
+          // и по прямому адресу. Раньше list.first на пустом списке ронял
+          // построение экрана целиком.
+          if (list.isEmpty) {
+            return Column(
+              children: [
+                AppHeader(
+                  title: 'Шахматка',
+                  subtitle: 'Объектов пока нет',
+                  onBack: () => Navigator.of(context).pop(),
+                ),
+                const Expanded(
+                  child: Center(
+                    child: EmptyState(
+                      icon: Icons.domain_outlined,
+                      text: 'Пока нет ни одного объекта.\n'
+                          'Создайте его в админ-панели — раздел «Массовое '
+                          'создание».',
+                    ),
+                  ),
+                ),
+              ],
+            );
+          }
           final complex = list.firstWhere(
             (c) => c.id == widget.complexId,
             orElse: () => list.first,

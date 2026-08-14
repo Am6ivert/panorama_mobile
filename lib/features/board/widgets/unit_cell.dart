@@ -135,7 +135,11 @@ class _HolderMark extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = AppColors.fromSeed(name);
-    final initials = name.characters.first.toUpperCase();
+    // characters.first на пустой строке бросает StateError и роняет клетку
+    // вместе со всей шахматкой — имя приходит с сервера, полагаться на него
+    // без проверки нельзя.
+    final initials =
+        name.isEmpty ? '?' : name.characters.first.toUpperCase();
 
     if (compact) {
       return Container(

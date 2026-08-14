@@ -145,9 +145,14 @@ abstract interface class PanoramaRepository {
   });
 
   /// Смена пароля (в т.ч. обязательная при первом входе, FR-01.3).
+  /// Смена пароля. [currentPassword] обязателен, когда пользователь меняет
+  /// СВОЙ пароль по своей воле: сервер сверяет его и без совпадения отказывает.
+  /// Не нужен при обязательной первой смене и когда администратор
+  /// сбрасывает пароль другому сотруднику.
   Future<ManagerModel> changePassword({
     required String userId,
     required String newPassword,
+    String? currentPassword,
   });
 
   /// Обновление профиля пользователя (имя, телефон).

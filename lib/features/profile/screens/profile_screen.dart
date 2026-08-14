@@ -3,8 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
-import '../../../core/data/panorama_repository.dart';
 import '../../../core/providers/data_providers.dart';
+import '../../../core/utils/api_action.dart';
 import '../../../shared/widgets/app_header.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
@@ -138,43 +138,32 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       return;
     }
 
+    final user = ref.read(currentUserProvider);
+    if (user == null) return;
+
     setState(() => _changingPassword = true);
 
-    try {
-      final user = ref.read(currentUserProvider);
-      if (user == null) return;
-
-      // Сначала проверяем текущий пароль через login
-      final result = await ref.read(panoramaRepositoryProvider).login(
-            login: user.login,
-            password: current,
-          );
-
-      if (result is! LoginOk) {
-        _showSnack('Неверный текущий пароль');
-        setState(() => _changingPassword = false);
-        return;
-      }
-
-      // Меняем пароль
-      final updated = await ref.read(panoramaRepositoryProvider).changePassword(
+    // Текущий пароль проверяет сервер в самой смене. Раньше приложение
+    // сверяло его отдельным входом: это заводило лишнюю сессию и, главное,
+    // считалось неудачной попыткой входа — пять опечаток подряд закрывали
+    // человеку вход в приложение на 15 минут.
+    final updated = await runApi(
+      context,
+      () => ref.read(panoramaRepositoryProvider).changePassword(
             userId: user.id,
             newPassword: newPwd,
-          );
+            currentPassword: current,
+          ),
+    );
+    if (!mounted) return;
+    setState(() => _changingPassword = false);
+    if (updated == null) return; // причину пользователь уже увидел
 
-      ref.read(currentUserProvider.notifier).state = updated;
-
-      if (mounted) {
-        _currentPassword.clear();
-        _newPassword.clear();
-        _confirmPassword.clear();
-        _showSnack('Пароль успешно изменён');
-      }
-    } catch (e) {
-      _showSnack('Ошибка: $e');
-    } finally {
-      if (mounted) setState(() => _changingPassword = false);
-    }
+    ref.read(currentUserProvider.notifier).state = updated;
+    _currentPassword.clear();
+    _newPassword.clear();
+    _confirmPassword.clear();
+    _showSnack('Пароль успешно изменён');
   }
 
   void _showSnack(String message) {

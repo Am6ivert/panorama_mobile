@@ -41,7 +41,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Дашборд'), findsWidgets);
-    expect(find.text('ФОНД ПО СТАТУСАМ'), findsOneWidget);
+    // Раздел со сводкой по статусам однажды пропал при переделке интерфейса -
+    // с тех пор его наличие проверяется тестом.
+    expect(find.text('СКОЛЬКО КВАРТИР В КАЖДОМ СТАТУСЕ'), findsOneWidget);
   });
 
   testWidgets('неверный пароль не пускает в приложение', (tester) async {

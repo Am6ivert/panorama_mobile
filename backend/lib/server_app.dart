@@ -65,6 +65,8 @@ Middleware subscriptionMiddleware() => (Handler inner) => (Request req) async {
 Middleware errorsMiddleware() => (Handler inner) => (Request req) async {
       try {
         return await inner(req);
+      } on BadRequest catch (e) {
+        return jsonError(400, e.message);
       } catch (e, st) {
         final code = pgErrorCode(e);
         stderr.writeln('[${req.method} ${req.requestedUri.path}] '

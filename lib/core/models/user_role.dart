@@ -17,6 +17,12 @@ enum UserRole {
 
   bool get isSuperadmin => this == UserRole.superadmin;
 
+  /// Роли, которые администратор может выдать сотруднику.
+  ///
+  /// Суперадминистратор сюда не входит: он один на весь сервис и заводится
+  /// скриптом db\new_superadmin.ps1, а не из приложения.
+  static const assignable = [UserRole.manager, UserRole.admin];
+
   static UserRole fromWire(String? value) => UserRole.values.firstWhere(
     (r) => r.wire == value,
     orElse: () => UserRole.manager,

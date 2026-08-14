@@ -6,6 +6,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/models/client_model.dart';
 import '../../../core/providers/data_providers.dart';
+import '../../../core/utils/api_action.dart';
 import '../../../shared/widgets/choice_chip_bar.dart';
 
 /// Форма нового клиента (FR-07.1, FR-08.1). Возвращает заведённую карточку или
@@ -175,7 +176,11 @@ class _AddClientSheetState extends ConsumerState<AddClientSheet> {
   String? _validatePhone(String? value) {
     final digits = (value ?? '').replaceAll(RegExp(r'[^0-9]'), '');
     if (digits.isEmpty) return 'Укажите телефон — по нему ищут клиента';
-    if (digits.length < 9) return 'Похоже, номер неполный';
+    // Границы те же, что на сервере (7-15 цифр, предел формата E.164).
+    // Раньше приложение требовало минимум 9 и не давало завести клиента с
+    // коротким иностранным номером, хотя сервер такой принимает.
+    if (digits.length < 7) return 'Похоже, номер неполный';
+    if (digits.length > 15) return 'Слишком длинный номер';
     return null;
   }
 
@@ -185,37 +190,37 @@ class _AddClientSheetState extends ConsumerState<AddClientSheet> {
     if (seller == null) return;
     setState(() => _saving = true);
 
-    try {
-      // Формируем строку запроса: выбранные комнаты + кастомный текст
-      final roomsText = _selectedRooms.isEmpty
-          ? ''
-          : _selectedRooms.map((i) => _roomLabels[i]).join(', ');
-      final custom = _customRooms.text.trim();
-      final requestText = [
-        if (roomsText.isNotEmpty) roomsText,
-        if (custom.isNotEmpty) custom,
-        if (_request.text.trim().isNotEmpty) _request.text.trim(),
-      ].join(' · ');
+    // Формируем строку запроса: выбранные комнаты + кастомный текст
+    final roomsText = _selectedRooms.isEmpty
+        ? ''
+        : _selectedRooms.map((i) => _roomLabels[i]).join(', ');
+    final custom = _customRooms.text.trim();
+    final requestText = [
+      if (roomsText.isNotEmpty) roomsText,
+      if (custom.isNotEmpty) custom,
+      if (_request.text.trim().isNotEmpty) _request.text.trim(),
+    ].join(' · ');
 
-      final client = await ref
-          .read(panoramaRepositoryProvider)
-          .addClient(
+    // Через общий runApi: он разбирает код ответа и показывает причину
+    // так же, как остальные экраны, вместо «Не удалось сохранить: <объект>».
+    final client = await runApi(
+      context,
+      () => ref.read(panoramaRepositoryProvider).addClient(
             name: _name.text.trim(),
             phone: _phone.text.trim(),
             seller: seller,
             rooms: _selectedRooms.isEmpty ? 0 : _selectedRooms.first,
             source: _source ?? '',
             request: requestText,
-          );
-      ref.invalidate(clientsProvider);
-      if (mounted) Navigator.of(context).pop(client);
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _saving = false);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Не удалось сохранить: $e')));
+          ),
+    );
+    if (!mounted) return;
+    if (client == null) {
+      setState(() => _saving = false); // причину пользователь уже увидел
+      return;
     }
+    ref.invalidate(clientsProvider);
+    Navigator.of(context).pop(client);
   }
 }
 
