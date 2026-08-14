@@ -1,8 +1,10 @@
-import '../utils/money.dart';
 import 'unit_event.dart';
 import 'unit_status.dart';
 
-/// Квартира — центральная сущность приложения.
+/// Квартира — центральная сущность приложения (FR-02.3).
+///
+/// Денежные поля отсутствуют намеренно (ТЗ 1.3): подбор идёт только по
+/// характеристикам — объект, блок, этаж, комнаты, площадь, вид, отделка.
 class UnitModel {
   const UnitModel({
     required this.id,
@@ -10,10 +12,10 @@ class UnitModel {
     required this.complexName,
     required this.block,
     required this.floor,
+    required this.position,
     required this.number,
     required this.rooms,
     required this.area,
-    required this.price,
     required this.status,
     this.kitchen = '',
     this.view = '',
@@ -33,15 +35,15 @@ class UnitModel {
   final String block;
   final int floor;
 
-  /// Номер квартиры в блоке.
+  /// Позиция квартиры на этаже слева направо (колонка в шахматке, глоссарий).
+  final int position;
+
+  /// Сквозной номер квартиры в блоке.
   final int number;
 
   /// 0 — студия.
   final int rooms;
   final double area;
-
-  /// Полная стоимость в долларах.
-  final int price;
   final UnitStatus status;
 
   final String kitchen;
@@ -49,7 +51,7 @@ class UnitModel {
   final String finish;
   final int bathrooms;
 
-  /// Кто держит квартиру — заполнено для статусов «в работе» и «бронь».
+  /// Кто держит квартиру — заполнено для «в работе», «бронь», «оформление».
   final String? heldById;
   final String? heldByName;
   final DateTime? heldUntil;
@@ -65,11 +67,15 @@ class UnitModel {
   /// Короткая подпись для клетки шахматки: «Ст», «2к».
   String get shortLayout => rooms == 0 ? 'Ст' : '$roomsк';
 
-  String get priceUsd => Money.usd(price);
-  String get priceKgs => Money.kgsApprox(price);
-  String get pricePerSquare => Money.perSquare(price, area);
-
   bool heldBy(String managerId) => heldById == managerId;
+
+  /// Остаток времени брони/показа; null — если бессрочно или снят.
+  Duration? get timeLeft {
+    final until = heldUntil;
+    if (until == null) return null;
+    final left = until.difference(DateTime.now());
+    return left.isNegative ? Duration.zero : left;
+  }
 
   UnitModel copyWith({
     UnitStatus? status,
@@ -79,6 +85,12 @@ class UnitModel {
     String? clientId,
     String? clientName,
     List<UnitEvent>? history,
+    int? rooms,
+    double? area,
+    String? kitchen,
+    String? view,
+    String? finish,
+    int? bathrooms,
     bool clearHold = false,
   }) => UnitModel(
     id: id,
@@ -86,15 +98,15 @@ class UnitModel {
     complexName: complexName,
     block: block,
     floor: floor,
+    position: position,
     number: number,
-    rooms: rooms,
-    area: area,
-    price: price,
+    rooms: rooms ?? this.rooms,
+    area: area ?? this.area,
     status: status ?? this.status,
-    kitchen: kitchen,
-    view: view,
-    finish: finish,
-    bathrooms: bathrooms,
+    kitchen: kitchen ?? this.kitchen,
+    view: view ?? this.view,
+    finish: finish ?? this.finish,
+    bathrooms: bathrooms ?? this.bathrooms,
     heldById: clearHold ? null : (heldById ?? this.heldById),
     heldByName: clearHold ? null : (heldByName ?? this.heldByName),
     heldUntil: clearHold ? null : (heldUntil ?? this.heldUntil),
@@ -109,10 +121,10 @@ class UnitModel {
     complexName: json['complex_name'] as String? ?? '',
     block: json['block'] as String? ?? '',
     floor: (json['floor'] as num?)?.toInt() ?? 0,
+    position: (json['position'] as num?)?.toInt() ?? 0,
     number: (json['number'] as num?)?.toInt() ?? 0,
     rooms: (json['rooms'] as num?)?.toInt() ?? 0,
     area: (json['area'] as num?)?.toDouble() ?? 0,
-    price: (json['price'] as num?)?.toInt() ?? 0,
     status: UnitStatus.fromWire(json['status'] as String?),
     kitchen: json['kitchen'] as String? ?? '',
     view: json['view'] as String? ?? '',
@@ -138,10 +150,10 @@ class UnitModel {
     'complex_name': complexName,
     'block': block,
     'floor': floor,
+    'position': position,
     'number': number,
     'rooms': rooms,
     'area': area,
-    'price': price,
     'status': status.wire,
     'kitchen': kitchen,
     'view': view,

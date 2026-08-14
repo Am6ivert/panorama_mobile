@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "653897955390",
+    "project_id": "panorama-kg",
+    "storage_bucket": "panorama-kg.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:653897955390:android:c60b687e37d837e673f96f",
+        "android_client_info": {
+          "package_name": "kg.panorama.panorama_sales"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCO1KogBLkgwJlBcz90a0GbgH_VcLhb2HU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

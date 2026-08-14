@@ -6,18 +6,18 @@ import '../../../core/constants/app_text_styles.dart';
 import '../../../core/models/client_model.dart';
 import '../../../core/providers/data_providers.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/utils/money.dart';
 import '../../../shared/widgets/initials_avatar.dart';
 import '../../clients/widgets/add_client_sheet.dart';
 
-/// Результат выбора: `null` из [pickClient] означает отмену,
-/// а [ClientPick] с пустым [client] — «показ без привязки к клиенту».
+/// Результат выбора клиента: `null` из [pickClient] — отмена, а [ClientPick]
+/// с пустым [client] — «без клиента» (данные внесём позже).
 class ClientPick {
   const ClientPick(this.client);
-
   final ClientModel? client;
 }
 
+/// Выбор клиента для показа/брони. Клиента можно выбрать, завести нового или
+/// продолжить без него — данные клиента опциональны.
 Future<ClientPick?> pickClient(BuildContext context) =>
     showModalBottomSheet<ClientPick>(
       context: context,
@@ -31,7 +31,8 @@ class _ClientPickSheet extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final clients = ref.watch(clientsProvider);
+    // Свои клиенты — привязать квартиру можно только к своему клиенту.
+    final clients = ref.watch(visibleClientsProvider);
 
     return SafeArea(
       child: ConstrainedBox(
@@ -46,34 +47,30 @@ class _ClientPickSheet extends ConsumerWidget {
               const Text('С каким клиентом?', style: AppTextStyles.h1),
               const SizedBox(height: 4),
               const Text(
-                'Показ и бронь привяжутся к карточке клиента',
+                'Выберите клиента, заведите нового или продолжите без клиента — '
+                'данные можно внести позже.',
                 style: AppTextStyles.secondary,
               ),
               const SizedBox(height: 14),
-              clients.when(
-                loading: () => const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(20),
-                    child: CircularProgressIndicator(),
+              if (clients.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Text(
+                    'У вас пока нет клиентов — заведите нового или продолжите '
+                    'без клиента.',
+                    style: AppTextStyles.secondary,
                   ),
-                ),
-                error: (e, _) => Text('Не удалось загрузить клиентов: $e'),
-                data: (list) => Column(
-                  children: [
-                    for (final client in list)
-                      _ClientTile(
-                        client: client,
-                        onTap: () => Navigator.of(
-                          context,
-                        ).pop(ClientPick(client)),
-                      ),
-                  ],
-                ),
-              ),
+                )
+              else
+                for (final client in clients)
+                  _ClientTile(
+                    client: client,
+                    onTap: () =>
+                        Navigator.of(context).pop(ClientPick(client)),
+                  ),
               const SizedBox(height: 6),
-              // Клиента часто заводят прямо на объекте, во время показа.
               OutlinedButton.icon(
-                onPressed: () => _addAndPick(context),
+                onPressed: () => _addAndPick(context, ref),
                 icon: const Icon(Icons.add, size: 18),
                 style: OutlinedButton.styleFrom(
                   minimumSize: const Size.fromHeight(50),
@@ -89,20 +86,16 @@ class _ClientPickSheet extends ConsumerWidget {
                 ),
               ),
               const SizedBox(height: 9),
-              OutlinedButton(
+              TextButton(
                 onPressed: () =>
                     Navigator.of(context).pop(const ClientPick(null)),
-                style: OutlinedButton.styleFrom(
-                  minimumSize: const Size.fromHeight(50),
-                  side: const BorderSide(color: AppColors.line),
+                style: TextButton.styleFrom(
+                  minimumSize: const Size.fromHeight(48),
                   foregroundColor: AppColors.ink2,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(13),
-                  ),
                 ),
                 child: const Text(
-                  'Без клиента',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+                  'Продолжить без клиента',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
                 ),
               ),
             ],
@@ -112,8 +105,7 @@ class _ClientPickSheet extends ConsumerWidget {
     );
   }
 
-  /// Завести клиента не выходя из показа и сразу привязать к нему квартиру.
-  Future<void> _addAndPick(BuildContext context) async {
+  Future<void> _addAndPick(BuildContext context, WidgetRef ref) async {
     final client = await addClient(context);
     if (client == null || !context.mounted) return;
     Navigator.of(context).pop(ClientPick(client));
@@ -149,7 +141,7 @@ class _ClientTile extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   '${client.rooms == 0 ? 'Студия' : '${client.rooms}к'} · '
-                  'до ${Money.usd(client.budget)}',
+                  '${client.phone}',
                   style: const TextStyle(fontSize: 12, color: AppColors.ink2),
                 ),
               ],

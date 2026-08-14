@@ -43,13 +43,6 @@ abstract final class AppTextStyles {
     color: AppColors.ink2,
   );
 
-  static const price = TextStyle(
-    fontSize: 26,
-    fontWeight: FontWeight.w800,
-    letterSpacing: -0.8,
-    color: AppColors.ink,
-  );
-
   static const onDarkTitle = TextStyle(
     fontSize: 20,
     fontWeight: FontWeight.w700,

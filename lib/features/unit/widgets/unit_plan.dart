@@ -20,10 +20,7 @@ class _Layout {
   final List<(double, double)> windows;
 }
 
-/// Схемы планировок по комнатности.
-///
-/// Это типовые схемы до того, как Panorama отдаст настоящие чертежи —
-/// метраж и состав комнат уже совпадают с тем, что называет менеджер.
+/// Схемы планировок по комнатности: метраж и состав комнат.
 const _layouts = <int, _Layout>{
   0: _Layout(
     Size(104, 112),
@@ -211,8 +208,7 @@ class _PlanPainter extends CustomPainter {
       oldDelegate.layout != layout || oldDelegate.showLabels != showLabels;
 }
 
-/// Горизонтальная лента «фото» квартиры. Реальные снимки подставим,
-/// когда получим их от застройщика.
+/// Горизонтальная лента с планировкой и видами квартиры.
 class UnitGallery extends StatelessWidget {
   const UnitGallery({super.key, required this.rooms, required this.cover});
 
